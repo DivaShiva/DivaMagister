@@ -21,6 +21,43 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
                 if (ImGui.BeginTabItem("Settings", ImGuiWindowFlag.None.getValue())) {
                     ImGui.Text("Welcome to my script!");
                     ImGui.Text("My scripts state is: " + script.getBotState());
+                    ImGui.Separator();
+                    
+                    ImGui.Text("Set Bot State:");
+                    if (ImGui.Button("IDLE")) {
+                        script.setBotState(SkeletonScript.BotState.IDLE);
+                    }
+                    ImGui.SameLine();
+                    if (ImGui.Button("SKILLING")) {
+                        script.setBotState(SkeletonScript.BotState.SKILLING);
+                    }
+                    ImGui.SameLine();
+                    if (ImGui.Button("BANKING")) {
+                        script.setBotState(SkeletonScript.BotState.BANKING);
+                    }
+                    
+                    ImGui.EndTabItem();
+                }
+                if (ImGui.BeginTabItem("Rotation", ImGuiWindowFlag.None.getValue())) {
+                    ImGui.Text("Ability Bar Scanner");
+                    ImGui.Separator();
+                    
+                    if (ImGui.Button("Scan Action Bar")) {
+                        script.scanActionBar();
+                    }
+                    
+                    ImGui.Text("Scans your action bar and caches ability positions.");
+                    ImGui.Text("This reduces queries and prevents crashes.");
+                    ImGui.Text("Run this once after setting up your action bar.");
+                    
+
+                    ImGui.Text("Cached Abilities: " + script.getCachedAbilityCount());
+                    
+
+                    if (ImGui.Button("Show Cached Slots")) {
+                        script.printCachedSlots();
+                    }
+                    
                     ImGui.EndTabItem();
                 }
                 if (ImGui.BeginTabItem("Other", ImGuiWindowFlag.None.getValue())) {
