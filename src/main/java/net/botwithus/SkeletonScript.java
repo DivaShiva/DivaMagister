@@ -29,6 +29,7 @@ public class SkeletonScript extends LoopingScript {
     private boolean someBool = true;
     private boolean useVulnBombs = false;
     private boolean useDeathMark = false;
+    private boolean useAdrenalineRenewal = false;
     private Random random = new Random();
     private int lastLoggedClientCycle = 0;
     private int serverTicks = 0;
@@ -52,6 +53,7 @@ public class SkeletonScript extends LoopingScript {
         rotation = new RotationManager("Necromancy Improvise", true); // true = spend adrenaline
         rotation.setDebug(true);
         rotation.setLogger(this::println); // Use script's println for logging
+        rotation.setUseAdrenalineRenewal(useAdrenalineRenewal); // Initialize setting
         
         // Subscribe to server tick events
         subscribe(ServerTickedEvent.class, event -> {
@@ -238,6 +240,17 @@ public class SkeletonScript extends LoopingScript {
     
     public void setUseDeathMark(boolean useDeathMark) {
         this.useDeathMark = useDeathMark;
+    }
+    
+    public boolean isUseAdrenalineRenewal() {
+        return useAdrenalineRenewal;
+    }
+    
+    public void setUseAdrenalineRenewal(boolean useAdrenalineRenewal) {
+        this.useAdrenalineRenewal = useAdrenalineRenewal;
+        if (rotation != null) {
+            rotation.setUseAdrenalineRenewal(useAdrenalineRenewal);
+        }
     }
     
     /**

@@ -67,7 +67,7 @@ public class RotationManager {
         put("Conjure Undead Army", 125);   // 75 seconds
         put("Life Transfer", 75);          // 45 seconds
         put("Conjure Skeleton Warrior", 0); // No cooldown
-        put("Command Skeleton Warrior", 25); // 15 seconds
+        put("Command Skeleton Warrior", 26); // 15 seconds
         put("Conjure Vengeful Ghost", 0);   // No cooldown
         put("Command Vengeful Ghost", 0);   // No cooldown (tracked by flag instead)
         put("Touch of Death", 24);          // 14.4 seconds
@@ -112,6 +112,12 @@ public class RotationManager {
      * @return true if an ability was executed, false otherwise
      */
     public boolean execute() {
+        // Check if we need to drink Adrenaline Renewal from previous tick
+        if (drinkAdrenNextTick) {
+            drinkAdrenNextTick = false;
+            drinkAdrenalineRenewal();
+        }
+        
         if (!canTrigger()) {
             return false;
         }
@@ -318,7 +324,7 @@ public class RotationManager {
             } catch (Exception e) { debugLog("[ERROR] Living Death check: " + e.getMessage()); }
             
             try {
-                if (soulStacks >= 4 && isAbilityReady("Volley of Souls")) {
+                if (soulStacks >= 5 && isAbilityReady("Volley of Souls")) {
                     ability = "Volley of Souls";
                     debugLog("[IMPROV]: Normal - Volley of Souls");
                     return ability;
@@ -377,10 +383,16 @@ public class RotationManager {
             } catch (Exception e) { debugLog("[ERROR] Conjure Army check: " + e.getMessage()); }
             
             try {
-                if (isAbilityReady("Life Transfer") && health > 9000) {
+                // Don't use Life Transfer if Conjure Army is almost ready (within 5 seconds / 8 ticks)
+                int armyCooldown = getAbilityCooldown("Conjure Undead Army");
+                boolean armyAlmostReady = armyCooldown > 0 && armyCooldown <= 8;
+                
+                if (isAbilityReady("Life Transfer") && health > 9000 && !armyAlmostReady) {
                     ability = "Life Transfer";
                     debugLog("[IMPROV]: Normal - Life Transfer");
                     return ability;
+                } else if (isAbilityReady("Life Transfer") && health > 9000 && armyAlmostReady) {
+                    debugLog("[IMPROV]: Skipping Life Transfer - Conjure Army ready in " + armyCooldown + " ticks");
                 }
             } catch (Exception e) { debugLog("[ERROR] Life Transfer check: " + e.getMessage()); }
             
@@ -418,10 +430,16 @@ public class RotationManager {
             } catch (Exception e) { debugLog("[ERROR] Soul Sap check: " + e.getMessage()); }
             
             try {
-                if (isAbilityReady("Life Transfer") && health > 8000) {
+                // Don't use Life Transfer if Conjure Army is almost ready (within 5 seconds / 8 ticks)
+                int armyCooldown = getAbilityCooldown("Conjure Undead Army");
+                boolean armyAlmostReady = armyCooldown > 0 && armyCooldown <= 8;
+                
+                if (isAbilityReady("Life Transfer") && health > 8000 && !armyAlmostReady) {
                     ability = "Life Transfer";
                     debugLog("[IMPROV]: Normal - Life Transfer (secondary)");
                     return ability;
+                } else if (isAbilityReady("Life Transfer") && health > 8000 && armyAlmostReady) {
+                    debugLog("[IMPROV]: Skipping Life Transfer (secondary) - Conjure Army ready in " + armyCooldown + " ticks");
                 }
             } catch (Exception e) { debugLog("[ERROR] Life Transfer secondary check: " + e.getMessage()); }
             
@@ -539,6 +557,8 @@ public class RotationManager {
             }
         }
         
+        // Note: Adrenaline Renewal is searched in backpack when needed, no need to cache
+        
         slotCacheInitialized = true;
         debugLog("[CACHE] Slot cache initialized with " + slotCache.size() + " abilities");
     }
@@ -578,6 +598,41 @@ public class RotationManager {
     
     public String getLastAbilityUsed() {
         return lastAbilityUsed;
+    }
+    
+    public void setUseAdrenalineRenewal(boolean useAdrenalineRenewal) {
+        this.useAdrenalineRenewal = useAdrenalineRenewal;
+    }
+    
+    public boolean isUseAdrenalineRenewal() {
+        return useAdrenalineRenewal;
+    }
+    
+    /**
+     * Drink Adrenaline Renewal potion
+     */
+    private void drinkAdrenalineRenewal() {
+        try {
+            debugLog("[ADREN RENEWAL] Searching for Adrenaline Renewal");
+            
+            // Search backpack for any Adrenaline Renewal potion
+            net.botwithus.rs3.game.Item pot = InventoryItemQuery.newQuery(93).results().stream()
+                    .filter(i -> i.getName() != null && i.getName().toLowerCase().contains("adrenaline renewal"))
+                    .findFirst().orElse(null);
+            
+            if (pot != null) {
+                debugLog("[ADREN RENEWAL] Drinking " + pot.getName());
+                if (Backpack.interact(pot.getName(), "Drink")) {
+                    debugLog("[ADREN RENEWAL] Successfully drank " + pot.getName());
+                } else {
+                    debugLog("[ADREN RENEWAL] Failed to drink " + pot.getName());
+                }
+            } else {
+                debugLog("[ADREN RENEWAL] No Adrenaline Renewal pot found in backpack");
+            }
+        } catch (Exception e) {
+            debugLog("[ERROR] Exception in drinkAdrenalineRenewal: " + e.getMessage());
+        }
     }
     
     /**
@@ -690,14 +745,36 @@ public class RotationManager {
     // Track if Invoke Death buff is active (waiting for next attack to apply Death Mark)
     private boolean invokeDeathBuffActive = false;
     
+    // Setting: Use Adrenaline Renewal with Living Death
+    private boolean useAdrenalineRenewal = false;
+    
+    // Flag to drink Adrenaline Renewal on next tick (after Living Death fires)
+    private boolean drinkAdrenNextTick = false;
+    
     /**
      * Get the remaining cooldown of an ability in ticks based on manual tracking
      * @return remaining cooldown in ticks, or 0 if ready
      */
     private int getAbilityCooldown(String abilityName) {
         Integer maxCooldown = ABILITY_COOLDOWNS.get(abilityName);
-        if (maxCooldown == null || maxCooldown == 0) {
-            return 0; // No cooldown or unknown ability
+        if (maxCooldown == null) {
+            return 0; // Unknown ability
+        }
+        
+        // Special case: Command Ghost has 6-tick cooldown after Conjure Army
+        if (abilityName.equals("Command Vengeful Ghost") && maxCooldown == 0) {
+            Integer lastUsed = lastUsedTick.get(abilityName);
+            Integer armyUsed = lastUsedTick.get("Conjure Undead Army");
+            if (lastUsed != null && armyUsed != null && lastUsed.equals(armyUsed)) {
+                // Command Ghost was set on cooldown by Conjure Army
+                int ticksSinceUse = serverTick - lastUsed;
+                return Math.max(0, 6 - ticksSinceUse);
+            }
+            return 0; // No cooldown normally
+        }
+        
+        if (maxCooldown == 0) {
+            return 0; // No cooldown
         }
         
         Integer lastUsed = lastUsedTick.get(abilityName);
@@ -765,6 +842,12 @@ public class RotationManager {
             lastUsedTick.remove("Touch of Death");
             deathSkullsUsedDuringLD = false; // Reset the flag
             debugLog("[COOLDOWN] Living Death reset Death Skulls and Touch of Death cooldowns");
+            
+            // Set flag to drink Adrenaline Renewal on next tick
+            if (useAdrenalineRenewal) {
+                drinkAdrenNextTick = true;
+                debugLog("[ADREN RENEWAL] Will drink on next tick");
+            }
         }
         
         // Special case: Track if Death Skulls is used during Living Death
@@ -785,10 +868,14 @@ public class RotationManager {
             }
         }
         
-        // Special case: Conjure Undead Army resets Command Ghost usage flag
+        // Special case: Conjure Undead Army resets Command Ghost usage flag and puts Command abilities on 3.6s cooldown
         if (abilityName.equals("Conjure Undead Army")) {
             commandGhostUsedThisSummon = false;
-            debugLog("[COOLDOWN] Conjure Army reset Command Ghost flag");
+            // Command abilities get 3.6 second (6 tick) cooldown when army is conjured
+            // Set both to current tick - they'll have 6 tick delay via special logic
+            lastUsedTick.put("Command Skeleton Warrior", serverTick - 19); // Will be ready in 6 ticks (25 - 19 = 6)
+            lastUsedTick.put("Command Vengeful Ghost", serverTick); // Will be ready in 6 ticks (special case in getAbilityCooldown)
+            debugLog("[COOLDOWN] Conjure Army reset Command Ghost flag and set Command abilities on 6 tick cooldown");
         }
         
         // Special case: Life Transfer extends summon duration by 21 seconds (35 ticks)

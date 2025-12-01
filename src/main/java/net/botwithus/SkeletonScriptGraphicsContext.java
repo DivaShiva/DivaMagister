@@ -62,6 +62,7 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
                     ImGui.Text("Rotation Options");
                     script.setUseVulnBombs(ImGui.Checkbox("Use vuln bombs?", script.isUseVulnBombs()));
                     script.setUseDeathMark(ImGui.Checkbox("Use Death Mark?", script.isUseDeathMark()));
+                    script.setUseAdrenalineRenewal(ImGui.Checkbox("Drink Adrenaline Renewal?", script.isUseAdrenalineRenewal()));
                     
                     ImGui.EndTabItem();
                 }
