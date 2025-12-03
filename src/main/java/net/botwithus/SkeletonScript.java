@@ -22,10 +22,16 @@ import net.botwithus.rs3.game.vars.VarManager;
 import net.botwithus.rs3.script.Execution;
 import net.botwithus.rs3.script.LoopingScript;
 import net.botwithus.rs3.script.config.ScriptConfig;
+import net.botwithus.rs3.game.queries.builders.items.GroundItemQuery;
+import net.botwithus.rs3.game.queries.builders.items.InventoryItemQuery;
+import net.botwithus.rs3.game.scene.entities.item.GroundItem;
+import net.botwithus.rs3.game.Item;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class SkeletonScript extends LoopingScript {
 
@@ -41,13 +47,20 @@ public class SkeletonScript extends LoopingScript {
     private int livingDeathActivatedServerTick = -1;
     private int lastAbilityServerTick = 0;
     private RotationManager rotation;
+    private int killCount = 0;
+    private long scriptStartTime = 0;
+    private boolean hasInteractedWithLootAll = false;
+    private int cumulativeLootValue = 0;
+    private boolean deathMarkAppliedThisKill = false;
+    private boolean overloadCheckedThisKill = false;
 
     enum BotState {
         IDLE,
         TOUCHING_OBELISK,
         HANDLING_DIALOG,
         FIGHTING_MAGISTER,
-        WAITING_FOR_LOOT
+        WAITING_FOR_LOOT,
+        LOOTING
     }
 
     public SkeletonScript(String s, ScriptConfig scriptConfig, ScriptDefinition scriptDefinition) {
@@ -113,9 +126,11 @@ public class SkeletonScript extends LoopingScript {
         // Execute every 3 server ticks (1.8 seconds)
         if (serverTicks - lastAbilityServerTick >= 3) {
             // HIGHEST PRIORITY: Check and apply Death Mark if enabled
-            if (useDeathMark) {
+            // Only apply once per kill
+            if (useDeathMark && !deathMarkAppliedThisKill) {
                 boolean deathMarkUsed = rotation.ensureDeathMarked();
                 if (deathMarkUsed) {
+                    deathMarkAppliedThisKill = true;
                     lastAbilityServerTick = serverTicks;
                     println("Tick " + serverTicks + " - Using: Invoke Death");
                     return; // Skip normal rotation this tick
@@ -236,10 +251,30 @@ public class SkeletonScript extends LoopingScript {
             case WAITING_FOR_LOOT -> {
                 Execution.delay(handleWaitingForLoot(player));
             }
+            case LOOTING -> {
+                Execution.delay(handleLooting(player));
+            }
         }
     }
 
     private long handleTouchObelisk(LocalPlayer player) {
+        // Check if we have a Key to the Crossing
+        if (!Backpack.contains("Key to the Crossing")) {
+            println("[MAGISTER] No Key to the Crossing found!");
+            
+            // Check if there's loot on the ground to collect
+            var itemsOnFloor = GroundItemQuery.newQuery().results();
+            if (!itemsOnFloor.isEmpty()) {
+                println("[MAGISTER] Loot remaining on ground, collecting before stopping");
+                botState = BotState.LOOTING;
+                return random.nextLong(600, 1000);
+            }
+            
+            println("[MAGISTER] No loot remaining, stopping script.");
+            botState = BotState.IDLE;
+            return random.nextLong(2000, 3000);
+        }
+        
         println("[MAGISTER] Looking for Soul obelisk");
         
         // Query for Soul obelisk
@@ -280,8 +315,10 @@ public class SkeletonScript extends LoopingScript {
         if (!results.isEmpty()) {
             net.botwithus.rs3.game.scene.entities.characters.npc.Npc magister = results.first();
             println("[MAGISTER] Magister spawned! Name: " + magister.getName() + " - Switching to fighting");
-            // Reset Death Mark tracking for new target
+            // Reset tracking for new kill
             rotation.resetDeathMark();
+            deathMarkAppliedThisKill = false;
+            overloadCheckedThisKill = false;
             botState = BotState.FIGHTING_MAGISTER;
             return random.nextLong(600, 1000);
         }
@@ -312,6 +349,12 @@ public class SkeletonScript extends LoopingScript {
     }
 
     private long handleFighting(LocalPlayer player) {
+        // Check overload buff at start of fight (once per kill)
+        if (!overloadCheckedThisKill) {
+            drinkOverload();
+            overloadCheckedThisKill = true;
+        }
+        
         // Check if Magister exists
         EntityResultSet<net.botwithus.rs3.game.scene.entities.characters.npc.Npc> results = 
             NpcQuery.newQuery()
@@ -345,7 +388,12 @@ public class SkeletonScript extends LoopingScript {
     }
 
     private long handleWaitingForLoot(LocalPlayer player) {
-        println("[MAGISTER] Waiting for loot to appear");
+        // Increment kill counter (only once per kill)
+        killCount++;
+        long elapsedTime = System.currentTimeMillis() - scriptStartTime;
+        long elapsedSeconds = elapsedTime / 1000;
+        double killsPerHour = killCount / (elapsedSeconds / 3600.0);
+        println("[MAGISTER] Kill #" + killCount + " complete! (" + String.format("%.1f", killsPerHour) + " kills/hour)");
         
         // Check if Magister respawned (shouldn't happen, but safety check)
         EntityResultSet<net.botwithus.rs3.game.scene.entities.characters.npc.Npc> results = 
@@ -360,11 +408,18 @@ public class SkeletonScript extends LoopingScript {
             return random.nextLong(600, 1000);
         }
         
-        // Loot appears quickly, go back to touching obelisk
-        // You can add loot pickup logic here if needed
+        // Check if we should loot (every 3 kills)
+        if (killCount % 3 == 0) {
+            println("[MAGISTER] 3 kills reached, looting!");
+            botState = BotState.LOOTING;
+            return random.nextLong(600, 1000);
+        }
+        
+        // Otherwise, go back to touching obelisk
         println("[MAGISTER] Magister dead, restarting cycle");
         // Reset Death Mark for next kill
         rotation.resetDeathMark();
+        deathMarkAppliedThisKill = false;
         botState = BotState.TOUCHING_OBELISK;
         return random.nextLong(600, 1000);
     }
@@ -386,6 +441,19 @@ public class SkeletonScript extends LoopingScript {
 
     public void setBotState(BotState botState) {
         this.botState = botState;
+        // Reset kill counter and start time when starting
+        if (botState == BotState.TOUCHING_OBELISK && killCount == 0) {
+            scriptStartTime = System.currentTimeMillis();
+        }
+    }
+    
+    public int getKillCount() {
+        return killCount;
+    }
+    
+    public void resetKillCount() {
+        killCount = 0;
+        scriptStartTime = System.currentTimeMillis();
     }
 
     public boolean isSomeBool() {
@@ -454,6 +522,170 @@ public class SkeletonScript extends LoopingScript {
             rotation.printCachedSlots();
         } else {
             println("[ERROR] Rotation manager not initialized");
+        }
+    }
+    
+    private long handleLooting(LocalPlayer player) {
+        println("[LOOT] Starting loot collection");
+        loot();
+        return random.nextLong(1000, 2000);
+    }
+    
+    private void loot() {
+        hasInteractedWithLootAll = false;
+        
+        // 1) grab everything on the ground
+        var itemsOnFloor = GroundItemQuery.newQuery().results();
+        if (itemsOnFloor.isEmpty()) {
+            println("[LOOT] No items on floor, continuing");
+            rotation.resetDeathMark();
+            deathMarkAppliedThisKill = false;
+            botState = BotState.TOUCHING_OBELISK;
+            return;
+        }
+        
+        // 3) pick one at random to actually take
+        GroundItem gi = itemsOnFloor.random();
+        if (gi == null) {
+            println("[LOOT] No valid ground item, continuing");
+            rotation.resetDeathMark();
+            deathMarkAppliedThisKill = false;
+            botState = BotState.TOUCHING_OBELISK;
+            return;
+        }
+        
+        // 4) log which one you're taking
+        println("[LOOT] Taking " + gi.getStackSize() + "x " + gi.getName());
+        
+        // 6) interact
+        gi.interact("Take");
+        Execution.delay(random.nextLong(1200, 2000));
+        
+        // 7) retry if the interface didn't open
+        boolean interfaceOpened = Execution.delayUntil(
+                15_000,
+                () -> Interfaces.isOpen(1622)
+        );
+        if (!interfaceOpened) {
+            println("[LOOT] Interface 1622 did not open. Attempting to interact again.");
+            if (gi.interact("Take")) {
+                println("[LOOT] Retrying take of " + gi.getName());
+                Execution.delay(random.nextLong(1800, 3000));
+            }
+        }
+        
+        // 8) press "Loot All"
+        LootAll();
+        
+        // 9) update your cumulative-value tracker
+        updateAndDisplayCumulativeLootValue();
+    }
+    
+    private void LootAll() {
+        if (!hasInteractedWithLootAll) {
+            Execution.delay(random.nextLong(500, 1000));
+            
+            ComponentQuery lootAllQuery = ComponentQuery.newQuery(1622);
+            List<Component> components = lootAllQuery.componentIndex(22).results().stream().toList();
+            
+            if (!components.isEmpty()) {
+                Component lootAllComponent = components.get(0);
+                if (lootAllComponent.interact()) {
+                    println("[LOOT] Clicked 'Loot All' successfully");
+                    hasInteractedWithLootAll = true;
+                    // Reset Death Mark and go back to touching obelisk
+                    rotation.resetDeathMark();
+                    deathMarkAppliedThisKill = false;
+                    botState = BotState.TOUCHING_OBELISK;
+                } else {
+                    println("[LOOT] Failed to click 'Loot All'");
+                }
+            } else {
+                println("[LOOT] 'Loot All' component not found");
+            }
+        }
+    }
+    
+    private void updateAndDisplayCumulativeLootValue() {
+        if (!Interfaces.isOpen(1622)) return;
+        Component valueScan = ComponentQuery.newQuery(1622)
+                .componentIndex(3)
+                .results()
+                .last();
+        if (valueScan == null) {
+            println("[LOOT] Loot-value component not found");
+            return;
+        }
+        
+        String detectedString = valueScan.getText();
+        String numberWithSuffix = extractNumberWithSuffix(detectedString);
+        if ("Error".equals(numberWithSuffix)) return;
+        
+        try {
+            int valueToAdd = parseValueWithSuffix(numberWithSuffix);
+            cumulativeLootValue += valueToAdd;
+            println("[LOOT] Cumulative Loot Value: " + cumulativeLootValue + "K");
+        } catch (NumberFormatException e) {
+            println("[LOOT] Number format error: " + e.getMessage());
+        }
+    }
+    
+    public String extractNumberWithSuffix(String source) {
+        Matcher matcher = Pattern.compile("(?i)([\\d,]+)([KM])")
+                .matcher(source);
+        if (matcher.find()) {
+            // group(1) is the digits+commas, group(2) is the suffix
+            return matcher.group(1) + matcher.group(2).toUpperCase();
+        }
+        return "Error";
+    }
+    
+    private int parseValueWithSuffix(String numberWithSuffix) {
+        String clean = numberWithSuffix
+                .replace(",", "")
+                .toUpperCase();   // e.g. "1843K" or "150M"
+        char suffix = clean.charAt(clean.length() - 1);
+        int base = Integer.parseInt(clean.substring(0, clean.length() - 1));
+        
+        return switch (suffix) {
+            case 'K' -> base;
+            case 'M' -> base * 1000;
+            default -> throw new IllegalArgumentException(
+                    "Unexpected suffix: " + suffix);
+        };
+    }
+    
+    public int getCumulativeLootValue() {
+        return cumulativeLootValue;
+    }
+    
+    private void drinkOverload() {
+        int buffTicks = VarManager.getVarbitValue(48834);
+        if (buffTicks >= 3) {
+            // you still have 3+ ticks (45+ seconds) no need to drink yet
+            return;
+        }
+        
+        println("[OVERLOAD] Overload buff low (" + buffTicks + ") — searching for Overload potion");
+        Item pot = InventoryItemQuery
+                .newQuery(93)
+                .results()
+                .stream()
+                .filter(i -> {
+                    String name = i.getName();
+                    return name != null
+                            && name.toLowerCase().contains("overload");
+                })
+                .findFirst()
+                .orElse(null);
+        
+        if (pot != null) {
+            println("[OVERLOAD] Drinking " + pot.getName());
+            if (!Backpack.interact(pot.getName(), "Drink")) {
+                println("[OVERLOAD] Failed to drink " + pot.getName());
+            }
+        } else {
+            println("[OVERLOAD] No Overload potion found.");
         }
     }
    

@@ -23,6 +23,14 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
                     ImGui.Text("Current State: " + script.getBotState());
                     ImGui.Separator();
                     
+                    ImGui.Text("Kill Statistics:");
+                    ImGui.Text("Total Kills: " + script.getKillCount());
+                    ImGui.Text("Cumulative Loot Value: " + script.getCumulativeLootValue() + "K");
+                    if (ImGui.Button("Reset Kill Counter")) {
+                        script.resetKillCount();
+                    }
+                    ImGui.Separator();
+                    
                     ImGui.Text("Script Control:");
                     if (ImGui.Button("Start Magister")) {
                         script.setBotState(SkeletonScript.BotState.TOUCHING_OBELISK);
