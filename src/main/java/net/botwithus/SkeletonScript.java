@@ -9,8 +9,12 @@ import net.botwithus.rs3.game.inventories.Backpack;
 import net.botwithus.rs3.game.js5.types.vars.VarDomainType;
 import net.botwithus.rs3.game.queries.builders.components.ComponentQuery;
 import net.botwithus.rs3.game.queries.builders.objects.SceneObjectQuery;
+import net.botwithus.rs3.game.queries.results.EntityResultSet;
 import net.botwithus.rs3.game.hud.interfaces.Component;
 import net.botwithus.rs3.game.scene.entities.characters.player.LocalPlayer;
+import net.botwithus.rs3.game.queries.builders.characters.NpcQuery;
+import net.botwithus.rs3.game.minimenu.MiniMenu;
+import net.botwithus.rs3.game.minimenu.actions.ComponentAction;
 
 import java.util.stream.Collectors;
 import net.botwithus.rs3.game.scene.entities.object.SceneObject;
@@ -31,6 +35,7 @@ public class SkeletonScript extends LoopingScript {
     private boolean useDeathMark = false;
     private boolean useAdrenalineRenewal = false;
     private Random random = new Random();
+    private boolean useSplitSoul = true; // Default enabled
     private int lastLoggedClientCycle = 0;
     private int serverTicks = 0;
     private int livingDeathActivatedServerTick = -1;
@@ -38,11 +43,11 @@ public class SkeletonScript extends LoopingScript {
     private RotationManager rotation;
 
     enum BotState {
-        //define your own states here
         IDLE,
-        SKILLING,
-        BANKING,
-        //...
+        TOUCHING_OBELISK,
+        HANDLING_DIALOG,
+        FIGHTING_MAGISTER,
+        WAITING_FOR_LOOT
     }
 
     public SkeletonScript(String s, ScriptConfig scriptConfig, ScriptDefinition scriptDefinition) {
@@ -54,6 +59,7 @@ public class SkeletonScript extends LoopingScript {
         rotation.setDebug(true);
         rotation.setLogger(this::println); // Use script's println for logging
         rotation.setUseAdrenalineRenewal(useAdrenalineRenewal); // Initialize setting
+        rotation.setUseSplitSoul(useSplitSoul); // Initialize setting
         
         // Subscribe to server tick events
         subscribe(ServerTickedEvent.class, event -> {
@@ -61,8 +67,8 @@ public class SkeletonScript extends LoopingScript {
                 serverTicks = event.getTicks();
                 rotation.setServerTick(serverTicks);
                 
-                // Only execute rotation/logging when script is active AND in SKILLING state
-                if (isActive() && botState == BotState.SKILLING) {
+                // Only execute rotation/logging when script is active AND in FIGHTING_MAGISTER state
+                if (isActive() && botState == BotState.FIGHTING_MAGISTER) {
                     checkAndLog();
                     executeRotation();
                 }
@@ -74,8 +80,8 @@ public class SkeletonScript extends LoopingScript {
     }
     
     private void executeRotation() {
-        // Only execute when in SKILLING state
-        if (botState != BotState.SKILLING) {
+        // Only execute when in FIGHTING_MAGISTER state
+        if (botState != BotState.FIGHTING_MAGISTER) {
             return;
         }
         
@@ -83,6 +89,25 @@ public class SkeletonScript extends LoopingScript {
         LocalPlayer player = Client.getLocalPlayer();
         if (player == null || player.getTarget() == null) {
             return; // No target, don't execute rotation
+        }
+        
+        // Verify Magister actually exists and is alive (prevents using abilities on dead boss)
+        EntityResultSet<net.botwithus.rs3.game.scene.entities.characters.npc.Npc> results = 
+            NpcQuery.newQuery()
+                .name("The Magister", "The Magister (level: 899)")
+                .option("Attack")
+                .results();
+        
+        if (results.isEmpty()) {
+            // Boss is dead but state hasn't updated yet, don't use abilities
+            return;
+        }
+        
+        // Additional check: verify boss has health
+        net.botwithus.rs3.game.scene.entities.characters.npc.Npc magister = results.first();
+        if (magister == null || magister.getCurrentHealth() <= 0) {
+            // Boss is dead or dying, don't use abilities
+            return;
         }
         
         // Execute every 3 server ticks (1.8 seconds)
@@ -113,8 +138,8 @@ public class SkeletonScript extends LoopingScript {
     
     private void checkAndLog() {
         try {
-            // Only log when in SKILLING state
-            if (botState != BotState.SKILLING) {
+            // Only log when in FIGHTING_MAGISTER state
+            if (botState != BotState.FIGHTING_MAGISTER) {
                 return;
             }
             
@@ -183,37 +208,176 @@ public class SkeletonScript extends LoopingScript {
 
     @Override
     public void onLoop() {
-        //Loops every 100ms by default, to change:
-        //this.loopDelay = 500;
         LocalPlayer player = Client.getLocalPlayer();
-        if (player == null || Client.getGameState() != Client.GameState.LOGGED_IN || botState == BotState.IDLE) {
-            //wait some time so we dont immediately start on login.
-            Execution.delay(random.nextLong(3000,7000));
+        if (player == null || Client.getGameState() != Client.GameState.LOGGED_IN) {
+            Execution.delay(random.nextLong(1000, 2000));
+            return;
+        }
+        
+        if (botState == BotState.IDLE) {
+            Execution.delay(random.nextLong(1000, 2000));
             return;
         }
         
         switch (botState) {
             case IDLE -> {
-                //do nothing
-                println("We're idle!");
-                Execution.delay(random.nextLong(1000,3000));
+                println("Idle - waiting to start");
+                Execution.delay(random.nextLong(1000, 2000));
             }
-            case SKILLING -> {
-                //do some code that handles your skilling
-                Execution.delay(handleSkilling(player));
+            case TOUCHING_OBELISK -> {
+                Execution.delay(handleTouchObelisk(player));
             }
-            case BANKING -> {
-                // Component queries disabled - they crash the client
-                println("Banking state - component queries disabled");
-                Execution.delay(random.nextLong(2000, 4000));
+            case HANDLING_DIALOG -> {
+                Execution.delay(handleDialog(player));
+            }
+            case FIGHTING_MAGISTER -> {
+                Execution.delay(handleFighting(player));
+            }
+            case WAITING_FOR_LOOT -> {
+                Execution.delay(handleWaitingForLoot(player));
             }
         }
     }
 
-    private long handleSkilling(LocalPlayer player) {
-        //for example, if skilling progress interface is open, return a randomized value to keep waiting.
+    private long handleTouchObelisk(LocalPlayer player) {
+        println("[MAGISTER] Looking for Soul obelisk");
+        
+        // Query for Soul obelisk
+        EntityResultSet<SceneObject> results = SceneObjectQuery.newQuery().name("Soul obelisk").option("Touch").results();
+        
+        if (results.isEmpty()) {
+            println("[MAGISTER] Soul obelisk not found");
+            return random.nextLong(1000, 2000);
+        }
+        
+        SceneObject obelisk = results.first();
+        if (obelisk == null) {
+            println("[MAGISTER] Soul obelisk is null");
+            return random.nextLong(1000, 2000);
+        }
+        
+        println("[MAGISTER] Touching Soul obelisk");
+        if (obelisk.interact("Touch")) {
+            println("[MAGISTER] Successfully touched obelisk, waiting for dialog");
+            botState = BotState.HANDLING_DIALOG;
+            return random.nextLong(1200, 1800);
+        }
+        
+        println("[MAGISTER] Failed to touch obelisk");
+        return random.nextLong(800, 1200);
+    }
 
-        return random.nextLong(1500,3000);
+    private long handleDialog(LocalPlayer player) {
+        println("[MAGISTER] Handling dialog");
+        
+        // Check if Magister already spawned first (fastest check)
+        EntityResultSet<net.botwithus.rs3.game.scene.entities.characters.npc.Npc> results = 
+            NpcQuery.newQuery()
+                .name("The Magister", "The Magister (level: 899)")
+                .option("Attack")
+                .results();
+        
+        if (!results.isEmpty()) {
+            net.botwithus.rs3.game.scene.entities.characters.npc.Npc magister = results.first();
+            println("[MAGISTER] Magister spawned! Name: " + magister.getName() + " - Switching to fighting");
+            // Reset Death Mark tracking for new target
+            rotation.resetDeathMark();
+            botState = BotState.FIGHTING_MAGISTER;
+            return random.nextLong(600, 1000);
+        }
+        
+        // Check if dialog interface is open (interface 1188)
+        boolean dialogOpen = Interfaces.isOpen(1188);
+        println("[MAGISTER] Dialog interface 1188 open: " + dialogOpen);
+        
+        if (dialogOpen) {
+            println("[MAGISTER] Dialog found, clicking option with MiniMenu");
+            // Use MiniMenu to interact with dialog (ComponentAction.DIALOGUE, 0, -1, 77856776)
+            boolean clicked = MiniMenu.interact(ComponentAction.DIALOGUE.getType(), 0, -1, 77856776);
+            println("[MAGISTER] MiniMenu.interact result: " + clicked);
+            
+            if (clicked) {
+                println("[MAGISTER] Dialog clicked successfully, waiting for Magister to spawn");
+                // Don't change state yet, wait for next loop to detect Magister
+                return random.nextLong(800, 1200);
+            } else {
+                println("[MAGISTER] MiniMenu.interact failed, trying again");
+                return random.nextLong(400, 600);
+            }
+        }
+        
+        // No dialog and no Magister - might be in transition
+        println("[MAGISTER] No dialog detected and no Magister found, waiting...");
+        return random.nextLong(600, 1000);
+    }
+
+    private long handleFighting(LocalPlayer player) {
+        // Check if Magister exists
+        EntityResultSet<net.botwithus.rs3.game.scene.entities.characters.npc.Npc> results = 
+            NpcQuery.newQuery()
+                .name("The Magister", "The Magister (level: 899)")
+                .option("Attack")
+                .results();
+        
+        if (results.isEmpty()) {
+            println("[MAGISTER] Magister dead, transitioning to loot wait");
+            botState = BotState.WAITING_FOR_LOOT;
+            return random.nextLong(300, 600);
+        }
+        
+        net.botwithus.rs3.game.scene.entities.characters.npc.Npc magister = results.nearest();
+        
+        // Check if we're targeting the Magister
+        if (player.getTarget() == null || !player.getTarget().equals(magister)) {
+            println("[MAGISTER] Targeting The Magister");
+            if (magister.interact("Attack")) {
+                println("[MAGISTER] Successfully targeted Magister");
+                return random.nextLong(800, 1200);
+            } else {
+                println("[MAGISTER] Failed to target Magister");
+                return random.nextLong(600, 1000);
+            }
+        }
+        
+        // We're fighting, rotation handles combat automatically via ServerTickedEvent
+        // Just wait and let the rotation do its thing
+        return random.nextLong(600, 1000);
+    }
+
+    private long handleWaitingForLoot(LocalPlayer player) {
+        println("[MAGISTER] Waiting for loot to appear");
+        
+        // Check if Magister respawned (shouldn't happen, but safety check)
+        EntityResultSet<net.botwithus.rs3.game.scene.entities.characters.npc.Npc> results = 
+            NpcQuery.newQuery()
+                .name("The Magister", "The Magister (level: 899)")
+                .option("Attack")
+                .results();
+        
+        if (!results.isEmpty()) {
+            println("[MAGISTER] Magister still alive, back to fighting");
+            botState = BotState.FIGHTING_MAGISTER;
+            return random.nextLong(600, 1000);
+        }
+        
+        // Loot appears quickly, go back to touching obelisk
+        // You can add loot pickup logic here if needed
+        println("[MAGISTER] Magister dead, restarting cycle");
+        // Reset Death Mark for next kill
+        rotation.resetDeathMark();
+        botState = BotState.TOUCHING_OBELISK;
+        return random.nextLong(600, 1000);
+    }
+
+        public boolean isUseSplitSoul() {
+        return useSplitSoul;
+    }
+    
+    public void setUseSplitSoul(boolean useSplitSoul) {
+        this.useSplitSoul = useSplitSoul;
+        if (rotation != null) {
+            rotation.setUseSplitSoul(useSplitSoul);
+        }
     }
 
     public BotState getBotState() {

@@ -7,6 +7,12 @@ plugins {
 group = "net.botwithus.debug"
 version = "1.0-SNAPSHOT"
 
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(20))
+    }
+}
+
 repositories {
     mavenLocal()
     mavenCentral()

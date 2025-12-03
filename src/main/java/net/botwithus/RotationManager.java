@@ -308,7 +308,7 @@ public class RotationManager {
             } catch (Exception e) { debugLog("[ERROR] Death Skulls check: " + e.getMessage()); }
             
             try {
-                if (isAbilityReady("Split Soul")) {
+                if (useSplitSoul && isAbilityReady("Split Soul")) {
                     ability = "Split Soul";
                     debugLog("[IMPROV]: Normal - Split Soul");
                     return ability;
@@ -593,7 +593,13 @@ public class RotationManager {
         debugLog("Rotation reset");
     }
     
-
+    /**
+     * Reset Death Mark tracking (call when starting a new target)
+     */
+    public void resetDeathMark() {
+        this.invokeDeathBuffActive = false;
+        debugLog("[DEATH MARK] Reset - ready to apply to new target");
+    }
     
     public String getLastAbilityUsed() {
         return lastAbilityUsed;
@@ -605,6 +611,14 @@ public class RotationManager {
     
     public boolean isUseAdrenalineRenewal() {
         return useAdrenalineRenewal;
+    }
+    
+    public void setUseSplitSoul(boolean useSplitSoul) {
+        this.useSplitSoul = useSplitSoul;
+    }
+    
+    public boolean isUseSplitSoul() {
+        return useSplitSoul;
     }
     
     /**
@@ -746,6 +760,9 @@ public class RotationManager {
     
     // Setting: Use Adrenaline Renewal with Living Death
     private boolean useAdrenalineRenewal = false;
+    
+    // Setting: Use Split Soul
+    private boolean useSplitSoul = true; // Default enabled
     
     // Flag to drink Adrenaline Renewal on next tick (after Living Death fires)
     private boolean drinkAdrenNextTick = false;

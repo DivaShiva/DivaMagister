@@ -19,22 +19,25 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
         if (ImGui.Begin("My script", ImGuiWindowFlag.None.getValue())) {
             if (ImGui.BeginTabBar("My bar", ImGuiWindowFlag.None.getValue())) {
                 if (ImGui.BeginTabItem("Settings", ImGuiWindowFlag.None.getValue())) {
-                    ImGui.Text("Welcome to my script!");
-                    ImGui.Text("My scripts state is: " + script.getBotState());
+                    ImGui.Text("Magister Killer Script");
+                    ImGui.Text("Current State: " + script.getBotState());
                     ImGui.Separator();
                     
-                    ImGui.Text("Set Bot State:");
-                    if (ImGui.Button("IDLE")) {
+                    ImGui.Text("Script Control:");
+                    if (ImGui.Button("Start Magister")) {
+                        script.setBotState(SkeletonScript.BotState.TOUCHING_OBELISK);
+                    }
+                    ImGui.SameLine();
+                    if (ImGui.Button("Stop (IDLE)")) {
                         script.setBotState(SkeletonScript.BotState.IDLE);
                     }
-                    ImGui.SameLine();
-                    if (ImGui.Button("SKILLING")) {
-                        script.setBotState(SkeletonScript.BotState.SKILLING);
-                    }
-                    ImGui.SameLine();
-                    if (ImGui.Button("BANKING")) {
-                        script.setBotState(SkeletonScript.BotState.BANKING);
-                    }
+                    
+                    ImGui.Separator();
+                    ImGui.Text("Instructions:");
+                    ImGui.Text("1. Go to Rotation tab and click 'Scan Action Bar'");
+                    ImGui.Text("2. Stand near the Soul obelisk in Magister arena");
+                    ImGui.Text("3. Click 'Start Magister' to begin");
+                    ImGui.Text("4. Script will: Touch obelisk -> Handle dialog -> Kill Magister -> Repeat");
                     
                     ImGui.EndTabItem();
                 }
@@ -63,6 +66,7 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
                     script.setUseVulnBombs(ImGui.Checkbox("Use vuln bombs?", script.isUseVulnBombs()));
                     script.setUseDeathMark(ImGui.Checkbox("Use Death Mark?", script.isUseDeathMark()));
                     script.setUseAdrenalineRenewal(ImGui.Checkbox("Drink Adrenaline Renewal?", script.isUseAdrenalineRenewal()));
+                    script.setUseSplitSoul(ImGui.Checkbox("Use Split Soul?", script.isUseSplitSoul()));
                     
                     ImGui.EndTabItem();
                 }
