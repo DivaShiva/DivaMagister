@@ -33,7 +33,7 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
                     
                     ImGui.Text("Script Control:");
                     if (ImGui.Button("Start Magister")) {
-                        script.setBotState(SkeletonScript.BotState.TOUCHING_OBELISK);
+                        script.startScript();
                     }
                     ImGui.SameLine();
                     if (ImGui.Button("Stop (IDLE)")) {
@@ -74,6 +74,8 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
                     script.setUseVulnBombs(ImGui.Checkbox("Use vuln bombs?", script.isUseVulnBombs()));
                     script.setUseDeathMark(ImGui.Checkbox("Use Death Mark?", script.isUseDeathMark()));
                     script.setUseAdrenalineRenewal(ImGui.Checkbox("Drink Adrenaline Renewal?", script.isUseAdrenalineRenewal()));
+                    script.setUseWeaponPoison(ImGui.Checkbox("Apply Weapon Poison?", script.isUseWeaponPoison()));
+                    script.setUsePocketSlot(ImGui.Checkbox("Activate Pocket Slot (Scripture)?", script.isUsePocketSlot()));
                     script.setUseSplitSoul(ImGui.Checkbox("Use Split Soul?", script.isUseSplitSoul()));
                     
                     ImGui.EndTabItem();

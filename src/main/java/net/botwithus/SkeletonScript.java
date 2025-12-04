@@ -15,6 +15,10 @@ import net.botwithus.rs3.game.scene.entities.characters.player.LocalPlayer;
 import net.botwithus.rs3.game.queries.builders.characters.NpcQuery;
 import net.botwithus.rs3.game.minimenu.MiniMenu;
 import net.botwithus.rs3.game.minimenu.actions.ComponentAction;
+import net.botwithus.rs3.game.actionbar.ActionBar;
+import net.botwithus.rs3.game.movement.Movement;
+import net.botwithus.rs3.game.Coordinate;
+import net.botwithus.rs3.game.inventories.Equipment;
 
 import java.util.stream.Collectors;
 import net.botwithus.rs3.game.scene.entities.object.SceneObject;
@@ -24,6 +28,7 @@ import net.botwithus.rs3.script.LoopingScript;
 import net.botwithus.rs3.script.config.ScriptConfig;
 import net.botwithus.rs3.game.queries.builders.items.GroundItemQuery;
 import net.botwithus.rs3.game.queries.builders.items.InventoryItemQuery;
+import net.botwithus.rs3.game.queries.results.ResultSet;
 import net.botwithus.rs3.game.scene.entities.item.GroundItem;
 import net.botwithus.rs3.game.Item;
 
@@ -37,11 +42,13 @@ public class SkeletonScript extends LoopingScript {
 
     private BotState botState = BotState.IDLE;
     private boolean someBool = true;
-    private boolean useVulnBombs = false;
-    private boolean useDeathMark = false;
-    private boolean useAdrenalineRenewal = false;
+    private boolean useVulnBombs = true; // Default enabled
+    private boolean useDeathMark = true; // Default enabled
+    private boolean useAdrenalineRenewal = true; // Default enabled
+    private boolean useWeaponPoison = true; // Default enabled
+    private boolean usePocketSlot = true; // Default enabled
     private Random random = new Random();
-    private boolean useSplitSoul = true; // Default enabled
+    private boolean useSplitSoul = false; // Default disabled
     private int lastLoggedClientCycle = 0;
     private int serverTicks = 0;
     private int livingDeathActivatedServerTick = -1;
@@ -53,14 +60,20 @@ public class SkeletonScript extends LoopingScript {
     private int cumulativeLootValue = 0;
     private boolean deathMarkAppliedThisKill = false;
     private boolean overloadCheckedThisKill = false;
+    private boolean weaponPoisonCheckedThisKill = false;
+    private boolean pocketSlotActivatedThisKill = false;
+    private boolean hasTeleported = false;
+    private boolean hasLoadedPreset = false;
 
     enum BotState {
         IDLE,
+        DETERMINING_STATE,
         TOUCHING_OBELISK,
         HANDLING_DIALOG,
         FIGHTING_MAGISTER,
         WAITING_FOR_LOOT,
-        LOOTING
+        LOOTING,
+        BANKING
     }
 
     public SkeletonScript(String s, ScriptConfig scriptConfig, ScriptDefinition scriptDefinition) {
@@ -239,6 +252,9 @@ public class SkeletonScript extends LoopingScript {
                 println("Idle - waiting to start");
                 Execution.delay(random.nextLong(1000, 2000));
             }
+            case DETERMINING_STATE -> {
+                Execution.delay(handleDeterminingState(player));
+            }
             case TOUCHING_OBELISK -> {
                 Execution.delay(handleTouchObelisk(player));
             }
@@ -254,10 +270,39 @@ public class SkeletonScript extends LoopingScript {
             case LOOTING -> {
                 Execution.delay(handleLooting(player));
             }
+            case BANKING -> {
+                Execution.delay(handleBanking(player));
+            }
         }
     }
 
+    private long handleDeterminingState(LocalPlayer player) {
+        println("[DETERMINING] Checking player location...");
+        
+        // Check if player can see Soul obelisk
+        EntityResultSet<SceneObject> obeliskResults = SceneObjectQuery.newQuery()
+                .name("Soul obelisk")
+                .option("Touch")
+                .results();
+        
+        if (!obeliskResults.isEmpty()) {
+            println("[DETERMINING] Soul obelisk detected - starting at Magister arena");
+            setBotState(BotState.TOUCHING_OBELISK);
+        } else {
+            println("[DETERMINING] No Soul obelisk detected - starting at bank");
+            setBotState(BotState.BANKING);
+        }
+        
+        return random.nextLong(600, 1000);
+    }
+
     private long handleTouchObelisk(LocalPlayer player) {
+        // Check if player is still moving (loading into arena)
+        if (player.isMoving()) {
+            println("[MAGISTER] Player is moving, waiting to stop...");
+            return random.nextLong(1000, 1500);
+        }
+        
         // Check if we have a Key to the Crossing
         if (!Backpack.contains("Key to the Crossing")) {
             println("[MAGISTER] No Key to the Crossing found!");
@@ -265,14 +310,14 @@ public class SkeletonScript extends LoopingScript {
             // Check if there's loot on the ground to collect
             var itemsOnFloor = GroundItemQuery.newQuery().results();
             if (!itemsOnFloor.isEmpty()) {
-                println("[MAGISTER] Loot remaining on ground, collecting before stopping");
+                println("[MAGISTER] Loot remaining on ground, collecting before banking");
                 botState = BotState.LOOTING;
                 return random.nextLong(600, 1000);
             }
             
-            println("[MAGISTER] No loot remaining, stopping script.");
-            botState = BotState.IDLE;
-            return random.nextLong(2000, 3000);
+            println("[MAGISTER] No keys or loot remaining, going to bank.");
+            botState = BotState.BANKING;
+            return random.nextLong(600, 1000);
         }
         
         println("[MAGISTER] Looking for Soul obelisk");
@@ -291,11 +336,26 @@ public class SkeletonScript extends LoopingScript {
             return random.nextLong(1000, 2000);
         }
         
+        // Check distance to obelisk
+        Coordinate obeliskCoord = obelisk.getCoordinate();
+        Coordinate playerCoord = player.getCoordinate();
+        double distance = playerCoord.distanceTo(obeliskCoord);
+        
+        println("[MAGISTER] Distance to obelisk: " + String.format("%.1f", distance) + " tiles");
+        
+        // If too far, walk closer
+        if (distance > 15) {
+            println("[MAGISTER] Obelisk is too far (" + String.format("%.1f", distance) + " tiles), walking closer...");
+            Movement.walkTo(obeliskCoord.getX(), obeliskCoord.getY(), true);
+            return random.nextLong(1500, 2000);
+        }
+        
         println("[MAGISTER] Touching Soul obelisk");
+        
         if (obelisk.interact("Touch")) {
             println("[MAGISTER] Successfully touched obelisk, waiting for dialog");
             botState = BotState.HANDLING_DIALOG;
-            return random.nextLong(1200, 1800);
+            return random.nextLong(2400, 3000);
         }
         
         println("[MAGISTER] Failed to touch obelisk");
@@ -319,6 +379,8 @@ public class SkeletonScript extends LoopingScript {
             rotation.resetDeathMark();
             deathMarkAppliedThisKill = false;
             overloadCheckedThisKill = false;
+            weaponPoisonCheckedThisKill = false;
+            pocketSlotActivatedThisKill = false;
             botState = BotState.FIGHTING_MAGISTER;
             return random.nextLong(600, 1000);
         }
@@ -353,6 +415,18 @@ public class SkeletonScript extends LoopingScript {
         if (!overloadCheckedThisKill) {
             drinkOverload();
             overloadCheckedThisKill = true;
+        }
+        
+        // Check weapon poison at start of fight (once per kill)
+        if (useWeaponPoison && !weaponPoisonCheckedThisKill) {
+            applyWeaponPoison();
+            weaponPoisonCheckedThisKill = true;
+        }
+        
+        // Activate pocket slot at start of fight (once per kill)
+        if (usePocketSlot && !pocketSlotActivatedThisKill) {
+            activatePocketSlot();
+            pocketSlotActivatedThisKill = true;
         }
         
         // Check if Magister exists
@@ -455,6 +529,11 @@ public class SkeletonScript extends LoopingScript {
         killCount = 0;
         scriptStartTime = System.currentTimeMillis();
     }
+    
+    public void startScript() {
+        println("[START] Starting script - determining location...");
+        setBotState(BotState.DETERMINING_STATE);
+    }
 
     public boolean isSomeBool() {
         return someBool;
@@ -489,6 +568,22 @@ public class SkeletonScript extends LoopingScript {
         if (rotation != null) {
             rotation.setUseAdrenalineRenewal(useAdrenalineRenewal);
         }
+    }
+    
+    public boolean isUseWeaponPoison() {
+        return useWeaponPoison;
+    }
+    
+    public void setUseWeaponPoison(boolean useWeaponPoison) {
+        this.useWeaponPoison = useWeaponPoison;
+    }
+    
+    public boolean isUsePocketSlot() {
+        return usePocketSlot;
+    }
+    
+    public void setUsePocketSlot(boolean usePocketSlot) {
+        this.usePocketSlot = usePocketSlot;
     }
     
     /**
@@ -687,6 +782,133 @@ public class SkeletonScript extends LoopingScript {
         } else {
             println("[OVERLOAD] No Overload potion found.");
         }
+    }
+    
+    private void applyWeaponPoison() {
+        int poisonCharges = VarManager.getVarbitValue(2102);
+        if (poisonCharges > 3) {
+            // Still have charges, no need to apply
+            return;
+        }
+        
+        println("[WEAPON POISON] Poison charges low (" + poisonCharges + ") — searching for Weapon poison");
+        
+        ResultSet<Item> items = InventoryItemQuery.newQuery(93).results();
+        Pattern poisonPattern = Pattern.compile("weapon poison\\+*?", Pattern.CASE_INSENSITIVE);
+        Item weaponPoisonItem = items.stream()
+                .filter(item -> {
+                    if (item.getName() == null) return false;
+                    Matcher matcher = poisonPattern.matcher(item.getName());
+                    return matcher.find();
+                })
+                .findFirst()
+                .orElse(null);
+        
+        if (weaponPoisonItem != null) {
+            println("[WEAPON POISON] Applying " + weaponPoisonItem.getName() + " ID: " + weaponPoisonItem.getId());
+            if (Backpack.interact(weaponPoisonItem.getName(), "Apply")) {
+                println("[WEAPON POISON] " + weaponPoisonItem.getName() + " has been applied");
+            } else {
+                println("[WEAPON POISON] Failed to apply " + weaponPoisonItem.getName());
+            }
+        } else {
+            println("[WEAPON POISON] No Weapon poison found in inventory");
+        }
+    }
+    
+    private void activatePocketSlot() {
+        // Check if pocket slot item is inactive (0) and has enough time remaining (60+ seconds)
+        // Varbit 30605: active status (0 = inactive, 1 = active) - works for Scripture of Jas and similar items
+        // Varbit 30604: time remaining in seconds
+        int pocketActive = VarManager.getVarbitValue(30605);
+        int timeRemaining = VarManager.getVarbitValue(30604);
+        
+        if (pocketActive == 0 && timeRemaining >= 60) {
+            println("[POCKET SLOT] Activating pocket slot item (Time remaining: " + timeRemaining + "s)");
+            Equipment.interact(Equipment.Slot.POCKET, "Activate/Deactivate");
+        } else if (pocketActive == 1) {
+            println("[POCKET SLOT] Pocket slot item already active");
+        } else {
+            println("[POCKET SLOT] Not enough time remaining (" + timeRemaining + "s < 60s)");
+        }
+    }
+    
+    private long handleBanking(LocalPlayer player) {
+        println("[BANKING] >>> ENTERED <<<");
+        
+        // Step 1: Teleport to War's Retreat if not already done
+        SceneObject magistersPortal = SceneObjectQuery.newQuery().name("Portal (The Magister)").results().nearest();
+        if (magistersPortal == null) {
+            println("[BANKING] Using War's Retreat Teleport...");
+            ActionBar.useAbility("War's Retreat Teleport");
+            hasTeleported = true;
+            return random.nextLong(3000, 5000); // Wait for teleport
+        }
+        
+        // Step 2: Look for Bank chest and load preset
+        SceneObject bankChest = SceneObjectQuery.newQuery().name("Bank chest").results().nearest();
+        if (bankChest != null && !hasLoadedPreset) {
+            println("[BANKING] Bank chest found, loading last preset...");
+            boolean interacted = bankChest.interact("Load Last Preset from");
+            println("[BANKING] Load preset interaction result: " + interacted);
+            if (interacted) {
+                hasLoadedPreset = true;
+                return random.nextLong(2000, 3000); // Wait for preset to load
+            }
+        } else if (!hasLoadedPreset) {
+            println("[BANKING] No bank chest found nearby!");
+            return random.nextLong(1000, 2000);
+        }
+        
+        // Step 3: Return to Magister
+        println("[BANKING] Preset loaded. Ready to return to Magister!");
+        
+        // Look for Portal (The Magister) and enter
+        magistersPortal = SceneObjectQuery.newQuery().name("Portal (The Magister)").results().nearest();
+        if (magistersPortal != null) {
+            println("[BANKING] The Magister portal found, entering...");
+            boolean interacted = magistersPortal.interact("Enter");
+            println("[BANKING] Portal interaction result: " + interacted);
+            if (interacted) {
+                // Wait for teleport, then look for The First Gate to confirm we're back
+                Execution.delay(random.nextLong(3000, 5000));
+                SceneObject magistersEntrance = SceneObjectQuery.newQuery().name("The First Gate").results().nearest();
+                if (magistersEntrance != null) {
+                    println("[BANKING] The First Gate detected! Back at Magister. Entering...");
+                    // Reset banking flags for next cycle
+                    hasTeleported = false;
+                    hasLoadedPreset = false;
+                    boolean entered = magistersEntrance.interact("Enter");
+                    if (entered) {
+                        println("[BANKING] Entered gate, waiting for arena to load...");
+                        Execution.delay(random.nextLong(3000, 5000));
+                        
+                        // Wait for obelisk to appear (confirms we're in the arena)
+                        boolean obeliskFound = Execution.delayUntil(5000, () -> {
+                            EntityResultSet<SceneObject> obeliskCheck = SceneObjectQuery.newQuery()
+                                    .name("Soul obelisk")
+                                    .option("Touch")
+                                    .results();
+                            return !obeliskCheck.isEmpty();
+                        });
+                        
+                        if (obeliskFound) {
+                            println("[BANKING] Soul obelisk detected! Arena loaded. Switching to TOUCHING_OBELISK state.");
+                            botState = BotState.TOUCHING_OBELISK;
+                        } else {
+                            println("[BANKING] Obelisk not found yet, waiting longer...");
+                            return random.nextLong(2000, 3000);
+                        }
+                    }
+                } else {
+                    println("[BANKING] Portal used but no First Gate detected yet. Waiting...");
+                }
+            }
+        } else {
+            println("[BANKING] No Magister portal found nearby!");
+        }
+        
+        return random.nextLong(600, 1200);
     }
    
 }
