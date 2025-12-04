@@ -43,9 +43,9 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
                     ImGui.Separator();
                     ImGui.Text("Instructions:");
                     ImGui.Text("1. Go to Rotation tab and click 'Scan Action Bar'");
-                    ImGui.Text("2. Stand near the Soul obelisk in Magister arena");
+                    ImGui.Text("2. Start in either magister areana or Wars retreat");
                     ImGui.Text("3. Click 'Start Magister' to begin");
-                    ImGui.Text("4. Script will: Touch obelisk -> Handle dialog -> Kill Magister -> Repeat");
+                    ;
                     
                     ImGui.EndTabItem();
                 }
