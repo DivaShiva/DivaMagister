@@ -47,6 +47,7 @@ public class SkeletonScript extends LoopingScript {
     private boolean useAdrenalineRenewal = true; // Default enabled
     private boolean useWeaponPoison = true; // Default enabled
     private boolean usePocketSlot = true; // Default enabled
+    private boolean useFamiliar = true; // Default enabled
     private Random random = new Random();
     private boolean useSplitSoul = false; // Default disabled
     private int lastLoggedClientCycle = 0;
@@ -62,8 +63,10 @@ public class SkeletonScript extends LoopingScript {
     private boolean overloadCheckedThisKill = false;
     private boolean weaponPoisonCheckedThisKill = false;
     private boolean pocketSlotActivatedThisKill = false;
+    private boolean familiarCheckedThisKill = false;
     private boolean hasTeleported = false;
     private boolean hasLoadedPreset = false;
+    private long presetLoadedTime = 0;
 
     enum BotState {
         IDLE,
@@ -86,6 +89,7 @@ public class SkeletonScript extends LoopingScript {
         rotation.setLogger(this::println); // Use script's println for logging
         rotation.setUseAdrenalineRenewal(useAdrenalineRenewal); // Initialize setting
         rotation.setUseSplitSoul(useSplitSoul); // Initialize setting
+        rotation.setUseLivingDeath(false); // Initialize setting
         
         // Subscribe to server tick events
         subscribe(ServerTickedEvent.class, event -> {
@@ -116,6 +120,9 @@ public class SkeletonScript extends LoopingScript {
         if (player == null || player.getTarget() == null) {
             return; // No target, don't execute rotation
         }
+        
+        // Check prayer points and drink restore if needed
+        checkAndDrinkPrayerPotion(player);
         
         // Verify Magister actually exists and is alive (prevents using abilities on dead boss)
         EntityResultSet<net.botwithus.rs3.game.scene.entities.characters.npc.Npc> results = 
@@ -381,6 +388,7 @@ public class SkeletonScript extends LoopingScript {
             overloadCheckedThisKill = false;
             weaponPoisonCheckedThisKill = false;
             pocketSlotActivatedThisKill = false;
+            familiarCheckedThisKill = false;
             botState = BotState.FIGHTING_MAGISTER;
             return random.nextLong(600, 1000);
         }
@@ -429,6 +437,12 @@ public class SkeletonScript extends LoopingScript {
             pocketSlotActivatedThisKill = true;
         }
         
+        // Manage familiar at start of fight (once per kill)
+        if (useFamiliar && !familiarCheckedThisKill) {
+            manageFamiliarSummoning();
+            familiarCheckedThisKill = true;
+        }
+        
         // Check if Magister exists
         EntityResultSet<net.botwithus.rs3.game.scene.entities.characters.npc.Npc> results = 
             NpcQuery.newQuery()
@@ -464,9 +478,17 @@ public class SkeletonScript extends LoopingScript {
     private long handleWaitingForLoot(LocalPlayer player) {
         // Increment kill counter (only once per kill)
         killCount++;
+        
+        // Calculate kills per hour
         long elapsedTime = System.currentTimeMillis() - scriptStartTime;
         long elapsedSeconds = elapsedTime / 1000;
-        double killsPerHour = killCount / (elapsedSeconds / 3600.0);
+        double killsPerHour = 0.0;
+        
+        // Only calculate if at least 10 seconds have passed to avoid division issues
+        if (elapsedSeconds >= 10) {
+            killsPerHour = (killCount / (elapsedSeconds / 3600.0));
+        }
+        
         println("[MAGISTER] Kill #" + killCount + " complete! (" + String.format("%.1f", killsPerHour) + " kills/hour)");
         
         // Check if Magister respawned (shouldn't happen, but safety check)
@@ -586,6 +608,14 @@ public class SkeletonScript extends LoopingScript {
         this.usePocketSlot = usePocketSlot;
     }
     
+    public boolean isUseFamiliar() {
+        return useFamiliar;
+    }
+    
+    public void setUseFamiliar(boolean useFamiliar) {
+        this.useFamiliar = useFamiliar;
+    }
+    
     /**
      * Manually trigger action bar scan
      */
@@ -597,6 +627,14 @@ public class SkeletonScript extends LoopingScript {
         } else {
             println("[ERROR] Rotation manager not initialized");
         }
+    }
+    
+    /**
+     * Reset cached item slots (useful if action bar changes)
+     */
+    public void resetItemCache() {
+
+        println("[CACHE] Item cache reset");
     }
     
     /**
@@ -833,6 +871,114 @@ public class SkeletonScript extends LoopingScript {
         }
     }
     
+    private void manageFamiliarSummoning() {
+        boolean isFamiliarSummoned = isFamiliarSummoned();
+        int familiarTimeRemaining = VarManager.getVarbitValue(6055);
+        
+        if (isFamiliarSummoned) {
+            familiarTimeRemaining = VarManager.getVarbitValue(6055);
+            println("[FAMILIAR] Familiar time remaining: " + familiarTimeRemaining + " Minutes");
+        }
+        
+        if (!isFamiliarSummoned || familiarTimeRemaining <= 5) {
+            summonFamiliar();
+        }
+    }
+    
+    private boolean isFamiliarSummoned() {
+        Component familiarComponent = ComponentQuery.newQuery(284).spriteId(26095).results().first();
+        return familiarComponent != null;
+    }
+    
+    private void summonFamiliar() {
+        ResultSet<Item> items = InventoryItemQuery.newQuery(93).results();
+        Item itemToSummon = items.stream()
+                .filter(item -> item.getName() != null && 
+                        (item.getName().toLowerCase().contains("pouch") || 
+                         item.getName().toLowerCase().contains("contract")))
+                .findFirst()
+                .orElse(null);
+        
+        if (itemToSummon != null) {
+            println("[FAMILIAR] Attempting to summon with: " + itemToSummon.getName());
+            boolean success = Backpack.interact(itemToSummon.getName(), "Summon");
+            Execution.delay(random.nextLong(1600, 2100));
+            
+            if (success) {
+                println("[FAMILIAR] Summoned familiar with: " + itemToSummon.getName());
+                boolean familiarSummoned = Execution.delayUntil(10000, this::isFamiliarSummoned);
+                
+                if (familiarSummoned) {
+                    println("[FAMILIAR] " + itemToSummon.getName() + " is now summoned.");
+                } else {
+                    println("[FAMILIAR] Failed to confirm familiar summoning");
+                }
+            } else {
+                println("[FAMILIAR] Failed to interact with " + itemToSummon.getName());
+            }
+        } else {
+            println("[FAMILIAR] No familiar pouch or contract found in inventory");
+        }
+    }
+    
+    private void checkAndDrinkPrayerPotion(LocalPlayer player) {
+        // Check if prayers are active (Sorrow and Ruination)
+        boolean sorrowActive = VarManager.getVarbitValue(53279) == 1;
+        boolean ruinationActive = VarManager.getVarbitValue(53280) == 1;
+        
+        // If both prayers are off, activate Quick-prayers
+        if (!sorrowActive && !ruinationActive) {
+            println("[PRAYER] Prayers not active (Sorrow: " + sorrowActive + ", Ruination: " + ruinationActive + "), activating Quick-prayers");
+            ActionBar.useAbility("Quick-prayers 1");
+        }
+        
+        // Check prayer points and drink restore if needed
+        int prayerPoints = player.getPrayerPoints();
+        
+        if (prayerPoints < 6000) {
+            println("[PRAYER] Prayer points low (" + prayerPoints + "/600), drinking Super restore");
+            drinkSuperRestore();
+        }
+    }
+    
+    private void drinkSuperRestore() {
+        println("[PRAYER] Attempting to drink Super Restore from action bar...");
+        
+        String[] superRestoreVariants = new String[]{
+            "Super restore",
+            "Super restore flask",
+            "Super restore flask (1)",
+            "Super restore flask (2)",
+            "Super restore flask (3)",
+            "Super restore flask (4)",
+            "Super restore flask (5)",
+            "Super restore flask (6)",
+            "Super restore (1)",
+            "Super restore (2)",
+            "Super restore (3)",
+            "Super restore (4)",
+        };
+        
+        for (String restoreName : superRestoreVariants) {
+            ResultSet<Item> item = InventoryItemQuery.newQuery(93).name(restoreName).results();
+            if (ActionBar.containsItem(restoreName) && !item.isEmpty()) {
+                boolean successfulDrink = ActionBar.useItem(restoreName, "Drink");
+                if (successfulDrink) {
+                    println("[PRAYER] Successfully drank " + restoreName + " from action bar");
+                    return;
+                } else {
+                    println("[PRAYER] Failed to drink " + restoreName + " despite being on action bar");
+                }
+            }
+        }
+        
+        println("[PRAYER] No Super Restore found on action bar or in inventory");
+    }
+    
+
+        
+
+    
     private long handleBanking(LocalPlayer player) {
         println("[BANKING] >>> ENTERED <<<");
         
@@ -853,11 +999,34 @@ public class SkeletonScript extends LoopingScript {
             println("[BANKING] Load preset interaction result: " + interacted);
             if (interacted) {
                 hasLoadedPreset = true;
+                presetLoadedTime = System.currentTimeMillis();
                 return random.nextLong(2000, 3000); // Wait for preset to load
             }
         } else if (!hasLoadedPreset) {
             println("[BANKING] No bank chest found nearby!");
             return random.nextLong(1000, 2000);
+        }
+        
+        // Step 2.5: Check if keys exist after loading preset
+        if (hasLoadedPreset && presetLoadedTime > 0) {
+            long timeSincePresetLoad = System.currentTimeMillis() - presetLoadedTime;
+            
+            // Check if we have keys
+            boolean hasKeys = Backpack.contains("Key to the Crossing");
+            
+            if (!hasKeys && timeSincePresetLoad > 5000) { // 5 seconds timeout
+                println("[BANKING] ERROR: No keys found in inventory after loading preset!");
+                println("[BANKING] Setting script to IDLE. Please check your preset or add keys to bank.");
+                // Reset banking flags
+                hasTeleported = false;
+                hasLoadedPreset = false;
+                presetLoadedTime = 0;
+                setBotState(BotState.IDLE);
+                return random.nextLong(1000, 2000);
+            } else if (!hasKeys) {
+                println("[BANKING] Waiting for keys to appear in inventory... (" + timeSincePresetLoad + "ms)");
+                return random.nextLong(500, 1000);
+            }
         }
         
         // Step 3: Return to Magister
@@ -878,6 +1047,7 @@ public class SkeletonScript extends LoopingScript {
                     // Reset banking flags for next cycle
                     hasTeleported = false;
                     hasLoadedPreset = false;
+                    presetLoadedTime = 0;
                     boolean entered = magistersEntrance.interact("Enter");
                     if (entered) {
                         println("[BANKING] Entered gate, waiting for arena to load...");

@@ -76,6 +76,7 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
                     script.setUseAdrenalineRenewal(ImGui.Checkbox("Drink Adrenaline Renewal?", script.isUseAdrenalineRenewal()));
                     script.setUseWeaponPoison(ImGui.Checkbox("Apply Weapon Poison?", script.isUseWeaponPoison()));
                     script.setUsePocketSlot(ImGui.Checkbox("Activate Pocket Slot (Scripture)?", script.isUsePocketSlot()));
+                    script.setUseFamiliar(ImGui.Checkbox("Manage Familiar?", script.isUseFamiliar()));
                     script.setUseSplitSoul(ImGui.Checkbox("Use Split Soul?", script.isUseSplitSoul()));
                     
                     ImGui.EndTabItem();
