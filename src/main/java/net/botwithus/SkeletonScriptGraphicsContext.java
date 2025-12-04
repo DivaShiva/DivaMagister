@@ -78,6 +78,8 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
                     script.setUsePocketSlot(ImGui.Checkbox("Activate Pocket Slot (Scripture)?", script.isUsePocketSlot()));
                     script.setUseFamiliar(ImGui.Checkbox("Manage Familiar?", script.isUseFamiliar()));
                     script.setUseSplitSoul(ImGui.Checkbox("Use Split Soul?", script.isUseSplitSoul()));
+                    script.setUseEssenceOfFinality(ImGui.Checkbox("Use Essence of Finality?", script.isUseEssenceOfFinality()));
+                    script.setUseWeaponSpecial(ImGui.Checkbox("Use Weapon Special Attack?", script.isUseWeaponSpecial()));
                     
                     ImGui.EndTabItem();
                 }
