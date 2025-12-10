@@ -617,9 +617,10 @@ public class SkeletonScript extends LoopingScript {
 
     public void setBotState(BotState botState) {
         this.botState = botState;
-        // Reset kill counter and start time when starting
-        if (botState == BotState.TOUCHING_OBELISK && killCount == 0) {
+        // Initialize start time when starting script (if not already set)
+        if ((botState == BotState.TOUCHING_OBELISK || botState == BotState.DETERMINING_STATE) && scriptStartTime == 0) {
             scriptStartTime = System.currentTimeMillis();
+            println("[TIMER] Script timer started");
         }
     }
     
@@ -628,6 +629,11 @@ public class SkeletonScript extends LoopingScript {
     }
     
     public double getKillsPerHour() {
+        // If timer not started, return 0
+        if (scriptStartTime == 0) {
+            return 0.0;
+        }
+        
         long elapsedTime = System.currentTimeMillis() - scriptStartTime;
         long elapsedSeconds = elapsedTime / 1000;
         
@@ -645,6 +651,11 @@ public class SkeletonScript extends LoopingScript {
     
     public void startScript() {
         println("[START] Starting script - determining location...");
+        // Ensure timer is initialized
+        if (scriptStartTime == 0) {
+            scriptStartTime = System.currentTimeMillis();
+            println("[TIMER] Script timer initialized");
+        }
         setBotState(BotState.DETERMINING_STATE);
     }
 
