@@ -584,9 +584,16 @@ public class SkeletonScript extends LoopingScript {
             return random.nextLong(600, 1000);
         }
         
-        // Check if we should loot (every 3 kills)
-        if (killCount % 3 == 0) {
-            println("[MAGISTER] 3 kills reached, looting!");
+        // Check if we should loot (every 3 kills OR no keys left)
+        boolean hasKeys = Backpack.contains("Key to the Crossing");
+        boolean shouldLoot = (killCount % 3 == 0) || !hasKeys;
+        
+        if (shouldLoot) {
+            if (!hasKeys) {
+                println("[MAGISTER] No keys remaining - looting before banking!");
+            } else {
+                println("[MAGISTER] 3 kills reached - looting!");
+            }
             botState = BotState.LOOTING;
             return random.nextLong(600, 1000);
         }
@@ -808,7 +815,15 @@ public class SkeletonScript extends LoopingScript {
             println("[LOOT] No items on floor, continuing");
             rotation.resetDeathMark();
             deathMarkAppliedThisKill = false;
-            botState = BotState.TOUCHING_OBELISK;
+            
+            // Check if we have keys to continue, otherwise go to bank
+            if (!Backpack.contains("Key to the Crossing")) {
+                println("[LOOT] No keys remaining - going to bank");
+                botState = BotState.BANKING;
+            } else {
+                println("[LOOT] Keys available - returning to obelisk");
+                botState = BotState.TOUCHING_OBELISK;
+            }
             return;
         }
         
@@ -818,7 +833,15 @@ public class SkeletonScript extends LoopingScript {
             println("[LOOT] No valid ground item, continuing");
             rotation.resetDeathMark();
             deathMarkAppliedThisKill = false;
-            botState = BotState.TOUCHING_OBELISK;
+            
+            // Check if we have keys to continue, otherwise go to bank
+            if (!Backpack.contains("Key to the Crossing")) {
+                println("[LOOT] No keys remaining - going to bank");
+                botState = BotState.BANKING;
+            } else {
+                println("[LOOT] Keys available - returning to obelisk");
+                botState = BotState.TOUCHING_OBELISK;
+            }
             return;
         }
         
@@ -883,10 +906,18 @@ public class SkeletonScript extends LoopingScript {
                         }
                     }
                     
-                    // Reset Death Mark and go back to touching obelisk
+                    // Reset Death Mark
                     rotation.resetDeathMark();
                     deathMarkAppliedThisKill = false;
-                    botState = BotState.TOUCHING_OBELISK;
+                    
+                    // Check if we have keys to continue, otherwise go to bank
+                    if (!Backpack.contains("Key to the Crossing")) {
+                        println("[LOOT] No keys remaining - going to bank");
+                        botState = BotState.BANKING;
+                    } else {
+                        println("[LOOT] Keys available - returning to obelisk");
+                        botState = BotState.TOUCHING_OBELISK;
+                    }
                 } else {
                     println("[LOOT] Failed to click 'Loot All'");
                 }
@@ -1156,16 +1187,21 @@ public class SkeletonScript extends LoopingScript {
         
         println("[COMPLETION] Kill #" + killCount + " complete! (" + String.format("%.1f", killsPerHour) + " kills/hour)");
         
-        // Check if we should loot (every 3 kills)
-        boolean shouldLoot = killCount % 3 == 0;
+        // Check if we should loot (every 3 kills OR no keys left)
+        boolean hasKeys = Backpack.contains("Key to the Crossing");
+        boolean shouldLoot = (killCount % 3 == 0) || !hasKeys;
         
         if (shouldLoot) {
-            println("[COMPLETION] Kill #" + killCount + " - Looting phase triggered");
+            if (!hasKeys) {
+                println("[COMPLETION] Kill #" + killCount + " - No keys remaining, looting phase triggered");
+            } else {
+                println("[COMPLETION] Kill #" + killCount + " - Looting phase triggered");
+            }
             // Let the normal WAITING_FOR_LOOT -> LOOTING flow handle it (loot() will cast Invoke Death)
             return;
         }
         
-        // Not a loot kill - set flag to cast Invoke Death and click obelisk in main loop
+        // Not a loot kill and have keys - set flag to cast Invoke Death and click obelisk in main loop
         // This avoids blocking the chat event handler
         shouldCastInvokeDeathAndClickObelisk = true;
     }
