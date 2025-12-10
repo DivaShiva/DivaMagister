@@ -87,6 +87,7 @@ public class RotationManager {
     private boolean useEssenceOfFinality = true; // Use Essence of Finality special attack
     private boolean useWeaponSpecial = true; // Use Weapon Special Attack
     private boolean useSplitSoul = false; // Use Split Soul ability
+    private boolean useDeathSkulls = true; // Use Death Skulls ability
     
     public RotationManager(String name, boolean spend) {
         this.name = name;
@@ -282,7 +283,7 @@ public class RotationManager {
         if (livingDeath) {
             debugLog("[IMPROV]: Using Living Death rotation");
             // Living Death rotation
-            if (isAbilityReady("Death Skulls") && adrenaline >= 60) {
+            if (useDeathSkulls && isAbilityReady("Death Skulls") && adrenaline >= 60) {
                 ability = "Death Skulls";
                 debugLog("[IMPROV]: Living Death - Death Skulls");
             } else if (isAbilityReady("Touch of Death") && adrenaline < 60) {
@@ -308,7 +309,7 @@ public class RotationManager {
             
             // Check each ability individually with error handling
             try {
-                if (isAbilityReady("Death Skulls") && adrenaline >= 60) {
+                if (useDeathSkulls && isAbilityReady("Death Skulls") && adrenaline >= 60) {
                     ability = "Death Skulls";
                     debugLog("[IMPROV]: Normal - Death Skulls");
                     return ability;
@@ -650,6 +651,14 @@ public class RotationManager {
     
     public boolean isUseWeaponSpecial() {
         return useWeaponSpecial;
+    }
+    
+    public void setUseDeathSkulls(boolean useDeathSkulls) {
+        this.useDeathSkulls = useDeathSkulls;
+    }
+    
+    public boolean isUseDeathSkulls() {
+        return useDeathSkulls;
     }
     
     /**

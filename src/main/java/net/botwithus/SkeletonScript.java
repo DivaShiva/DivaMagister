@@ -3,6 +3,7 @@ package net.botwithus;
 
 import net.botwithus.internal.scripts.ScriptDefinition;
 import net.botwithus.rs3.events.impl.ServerTickedEvent;
+import net.botwithus.rs3.events.impl.ChatMessageEvent;
 import net.botwithus.rs3.game.Client;
 import net.botwithus.rs3.game.hud.interfaces.Interfaces;
 import net.botwithus.rs3.game.inventories.Backpack;
@@ -50,6 +51,7 @@ public class SkeletonScript extends LoopingScript {
     private boolean useFamiliar = true; // Default enabled
     private boolean useEssenceOfFinality = true; // Default enabled
     private boolean useWeaponSpecial = true; // Default enabled
+    private boolean useDeathSkulls = true; // Default enabled
     private Random random = new Random();
     private boolean useSplitSoul = false; // Default disabled
     private int lastLoggedClientCycle = 0;
@@ -69,6 +71,8 @@ public class SkeletonScript extends LoopingScript {
     private boolean hasTeleported = false;
     private boolean hasLoadedPreset = false;
     private long presetLoadedTime = 0;
+    private long invokeDeathCastTime = 0; // Track when Invoke Death was last cast (for 12 second buff duration)
+    private boolean shouldCastInvokeDeathAndClickObelisk = false; // Flag to handle completion in main loop
 
     enum BotState {
         IDLE,
@@ -94,6 +98,7 @@ public class SkeletonScript extends LoopingScript {
         rotation.setUseLivingDeath(false); // Initialize setting
         rotation.setUseEssenceOfFinality(useEssenceOfFinality); // Initialize setting
         rotation.setUseWeaponSpecial(useWeaponSpecial); // Initialize setting
+        rotation.setUseDeathSkulls(useDeathSkulls); // Initialize setting
         
         // Subscribe to server tick events
         subscribe(ServerTickedEvent.class, event -> {
@@ -111,6 +116,32 @@ public class SkeletonScript extends LoopingScript {
                 e.printStackTrace();
             }
         });
+        
+        // Subscribe to chat message events
+        subscribe(ChatMessageEvent.class, chatMessageEvent -> {
+            try {
+                String message = chatMessageEvent.getMessage();
+                
+                // Check if message contains "Completion Time:" (boss kill complete)
+                // Note: Case sensitive, and RS3 uses "Time" not "time"
+                if (message != null && message.contains("Completion Time:")) {
+                    println("[CHAT] *** DETECTED KILL COMPLETION MESSAGE ***");
+                    println("[CHAT] Message: " + message);
+                    
+                    // Trigger if script is active (can be in any state when kill completes)
+                    if (isActive()) {
+                        handleCompletionTimeMessage();
+                    } else {
+                        println("[CHAT] Script not active, ignoring completion message");
+                    }
+                }
+            } catch (Exception e) {
+                println("[ERROR] Exception in chat message handler: " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+        
+        println("[INIT] Chat message event listener registered successfully");
     }
     
     private void executeRotation() {
@@ -150,14 +181,26 @@ public class SkeletonScript extends LoopingScript {
         // Execute every 3 server ticks (1.8 seconds)
         if (serverTicks - lastAbilityServerTick >= 3) {
             // HIGHEST PRIORITY: Check and apply Death Mark if enabled
-            // Only apply once per kill
+            // Only apply once per kill, and only if Invoke Death buff is not active
             if (useDeathMark && !deathMarkAppliedThisKill) {
-                boolean deathMarkUsed = rotation.ensureDeathMarked();
-                if (deathMarkUsed) {
+                // Check if Invoke Death buff is still active (12 second duration)
+                long timeSinceInvokeDeath = System.currentTimeMillis() - invokeDeathCastTime;
+                boolean invokeDeathBuffActive = timeSinceInvokeDeath < 12000; // 12 seconds
+                
+                if (invokeDeathBuffActive) {
+                    // Buff is active, mark as applied and skip rotation manager's ensureDeathMarked
+                    println("[ROTATION] Invoke Death buff active (" + (12 - timeSinceInvokeDeath / 1000) + "s remaining), skipping recast");
                     deathMarkAppliedThisKill = true;
-                    lastAbilityServerTick = serverTicks;
-                    println("Tick " + serverTicks + " - Using: Invoke Death");
-                    return; // Skip normal rotation this tick
+                } else {
+                    // Buff expired, let rotation manager apply it
+                    boolean deathMarkUsed = rotation.ensureDeathMarked();
+                    if (deathMarkUsed) {
+                        deathMarkAppliedThisKill = true;
+                        invokeDeathCastTime = System.currentTimeMillis(); // Track cast time
+                        lastAbilityServerTick = serverTicks;
+                        println("Tick " + serverTicks + " - Using: Invoke Death");
+                        return; // Skip normal rotation this tick
+                    }
                 }
             }
             
@@ -366,7 +409,7 @@ public class SkeletonScript extends LoopingScript {
         if (obelisk.interact("Touch")) {
             println("[MAGISTER] Successfully touched obelisk, waiting for dialog");
             botState = BotState.HANDLING_DIALOG;
-            return random.nextLong(2400, 3000);
+            return random.nextLong(600, 900); // Reduced from 2400-3000
         }
         
         println("[MAGISTER] Failed to touch obelisk");
@@ -394,7 +437,7 @@ public class SkeletonScript extends LoopingScript {
             pocketSlotActivatedThisKill = false;
             familiarCheckedThisKill = false;
             botState = BotState.FIGHTING_MAGISTER;
-            return random.nextLong(600, 1000);
+            return random.nextLong(300, 600); // Reduced delay
         }
         
         // Check if dialog interface is open (interface 1188)
@@ -410,16 +453,16 @@ public class SkeletonScript extends LoopingScript {
             if (clicked) {
                 println("[MAGISTER] Dialog clicked successfully, waiting for Magister to spawn");
                 // Don't change state yet, wait for next loop to detect Magister
-                return random.nextLong(800, 1200);
+                return random.nextLong(400, 700); // Reduced from 800-1200
             } else {
                 println("[MAGISTER] MiniMenu.interact failed, trying again");
-                return random.nextLong(400, 600);
+                return random.nextLong(300, 500); // Reduced from 400-600
             }
         }
         
         // No dialog and no Magister - might be in transition
         println("[MAGISTER] No dialog detected and no Magister found, waiting...");
-        return random.nextLong(600, 1000);
+        return random.nextLong(400, 700); // Reduced from 600-1000
     }
 
     private long handleFighting(LocalPlayer player) {
@@ -480,20 +523,53 @@ public class SkeletonScript extends LoopingScript {
     }
 
     private long handleWaitingForLoot(LocalPlayer player) {
-        // Increment kill counter (only once per kill)
-        killCount++;
-        
-        // Calculate kills per hour
-        long elapsedTime = System.currentTimeMillis() - scriptStartTime;
-        long elapsedSeconds = elapsedTime / 1000;
-        double killsPerHour = 0.0;
-        
-        // Only calculate if at least 10 seconds have passed to avoid division issues
-        if (elapsedSeconds >= 10) {
-            killsPerHour = (killCount / (elapsedSeconds / 3600.0));
+        // Check if we need to cast Invoke Death and click obelisk (from completion message)
+        if (shouldCastInvokeDeathAndClickObelisk) {
+            shouldCastInvokeDeathAndClickObelisk = false; // Reset flag
+            
+            // Check if Invoke Death buff is still active (12 second duration)
+            long timeSinceInvokeDeath = System.currentTimeMillis() - invokeDeathCastTime;
+            boolean invokeDeathBuffActive = timeSinceInvokeDeath < 12000; // 12 seconds = 12000ms
+            
+            // Cast Invoke Death only if buff expired (to save time on next kill)
+            if (useDeathMark && !invokeDeathBuffActive) {
+                println("[COMPLETION] Casting Invoke Death (buff expired " + (timeSinceInvokeDeath / 1000) + "s ago)");
+                boolean deathMarkUsed = ActionBar.useAbility("Invoke Death");
+                if (deathMarkUsed) {
+                    println("[COMPLETION] ✓ Invoke Death cast - buff active for 12 seconds");
+                    invokeDeathCastTime = System.currentTimeMillis(); // Track cast time
+                    deathMarkAppliedThisKill = false; // Reset for new kill
+                    rotation.resetDeathMark();
+                } else {
+                    println("[COMPLETION] ✗ Failed to cast Invoke Death");
+                }
+            } else if (useDeathMark && invokeDeathBuffActive) {
+                println("[COMPLETION] ✓ Invoke Death buff still active (" + (12 - timeSinceInvokeDeath / 1000) + "s remaining)");
+                deathMarkAppliedThisKill = false; // Reset for new kill
+                rotation.resetDeathMark();
+            }
+            
+            // Click Soul obelisk for immediate next kill
+            println("[COMPLETION] Clicking Soul obelisk to start next kill...");
+            EntityResultSet<SceneObject> obeliskResults = SceneObjectQuery.newQuery()
+                    .name("Soul obelisk")
+                    .option("Touch")
+                    .results();
+            
+            if (!obeliskResults.isEmpty()) {
+                SceneObject obelisk = obeliskResults.first();
+                
+                if (obelisk.interact("Touch")) {
+                    println("[COMPLETION] ✓ Obelisk touched - transitioning to HANDLING_DIALOG");
+                    botState = BotState.HANDLING_DIALOG;
+                    return random.nextLong(600, 900);
+                } else {
+                    println("[COMPLETION] ✗ Failed to touch obelisk");
+                }
+            } else {
+                println("[COMPLETION] ✗ Soul obelisk not found");
+            }
         }
-        
-        println("[MAGISTER] Kill #" + killCount + " complete! (" + String.format("%.1f", killsPerHour) + " kills/hour)");
         
         // Check if Magister respawned (shouldn't happen, but safety check)
         EntityResultSet<net.botwithus.rs3.game.scene.entities.characters.npc.Npc> results = 
@@ -549,6 +625,17 @@ public class SkeletonScript extends LoopingScript {
     
     public int getKillCount() {
         return killCount;
+    }
+    
+    public double getKillsPerHour() {
+        long elapsedTime = System.currentTimeMillis() - scriptStartTime;
+        long elapsedSeconds = elapsedTime / 1000;
+        
+        // Only calculate if at least 10 seconds have passed to avoid division issues
+        if (elapsedSeconds >= 10 && killCount > 0) {
+            return (killCount / (elapsedSeconds / 3600.0));
+        }
+        return 0.0;
     }
     
     public void resetKillCount() {
@@ -639,6 +726,17 @@ public class SkeletonScript extends LoopingScript {
         this.useWeaponSpecial = useWeaponSpecial;
         if (rotation != null) {
             rotation.setUseWeaponSpecial(useWeaponSpecial);
+        }
+    }
+    
+    public boolean isUseDeathSkulls() {
+        return useDeathSkulls;
+    }
+    
+    public void setUseDeathSkulls(boolean useDeathSkulls) {
+        this.useDeathSkulls = useDeathSkulls;
+        if (rotation != null) {
+            rotation.setUseDeathSkulls(useDeathSkulls);
         }
     }
     
@@ -752,6 +850,28 @@ public class SkeletonScript extends LoopingScript {
                 if (lootAllComponent.interact()) {
                     println("[LOOT] Clicked 'Loot All' successfully");
                     hasInteractedWithLootAll = true;
+                    
+                    // Cast Invoke Death AFTER looting (so buff doesn't expire during loot process)
+                    if (useDeathMark) {
+                        long timeSinceInvokeDeath = System.currentTimeMillis() - invokeDeathCastTime;
+                        boolean invokeDeathBuffActive = timeSinceInvokeDeath < 12000; // 12 seconds
+                        
+                        if (!invokeDeathBuffActive) {
+                            println("[LOOT] Casting Invoke Death after looting (buff expired " + (timeSinceInvokeDeath / 1000) + "s ago)");
+                            Execution.delay(random.nextLong(300, 600)); // Small delay after loot
+                            boolean deathMarkUsed = ActionBar.useAbility("Invoke Death");
+                            if (deathMarkUsed) {
+                                invokeDeathCastTime = System.currentTimeMillis();
+                                println("[LOOT] ✓ Invoke Death cast - buff active for 12 seconds");
+                                Execution.delay(random.nextLong(600, 900));
+                            } else {
+                                println("[LOOT] ✗ Failed to cast Invoke Death");
+                            }
+                        } else {
+                            println("[LOOT] Invoke Death buff still active (" + (12 - timeSinceInvokeDeath / 1000) + "s remaining)");
+                        }
+                    }
+                    
                     // Reset Death Mark and go back to touching obelisk
                     rotation.resetDeathMark();
                     deathMarkAppliedThisKill = false;
@@ -1004,6 +1124,40 @@ public class SkeletonScript extends LoopingScript {
 
         
 
+    
+    /**
+     * Handle "Completion Time:" chat message - set flag to process in main loop
+     * The Invoke Death buff lasts 12 seconds and will apply Death Mark on next attack
+     */
+    private void handleCompletionTimeMessage() {
+        // Increment kill counter
+        killCount++;
+        
+        // Calculate kills per hour
+        long elapsedTime = System.currentTimeMillis() - scriptStartTime;
+        long elapsedSeconds = elapsedTime / 1000;
+        double killsPerHour = 0.0;
+        
+        // Only calculate if at least 10 seconds have passed to avoid division issues
+        if (elapsedSeconds >= 10) {
+            killsPerHour = (killCount / (elapsedSeconds / 3600.0));
+        }
+        
+        println("[COMPLETION] Kill #" + killCount + " complete! (" + String.format("%.1f", killsPerHour) + " kills/hour)");
+        
+        // Check if we should loot (every 3 kills)
+        boolean shouldLoot = killCount % 3 == 0;
+        
+        if (shouldLoot) {
+            println("[COMPLETION] Kill #" + killCount + " - Looting phase triggered");
+            // Let the normal WAITING_FOR_LOOT -> LOOTING flow handle it (loot() will cast Invoke Death)
+            return;
+        }
+        
+        // Not a loot kill - set flag to cast Invoke Death and click obelisk in main loop
+        // This avoids blocking the chat event handler
+        shouldCastInvokeDeathAndClickObelisk = true;
+    }
     
     private long handleBanking(LocalPlayer player) {
         println("[BANKING] >>> ENTERED <<<");

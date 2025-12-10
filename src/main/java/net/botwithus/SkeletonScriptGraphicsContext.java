@@ -25,6 +25,7 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
                     
                     ImGui.Text("Kill Statistics:");
                     ImGui.Text("Total Kills: " + script.getKillCount());
+                    ImGui.Text("Kills/Hour: " + String.format("%.1f", script.getKillsPerHour()));
                     ImGui.Text("Cumulative Loot Value: " + script.getCumulativeLootValue() + "K");
                     if (ImGui.Button("Reset Kill Counter")) {
                         script.resetKillCount();
@@ -73,6 +74,7 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
                     ImGui.Text("Rotation Options");
                     script.setUseVulnBombs(ImGui.Checkbox("Use vuln bombs?", script.isUseVulnBombs()));
                     script.setUseDeathMark(ImGui.Checkbox("Use Death Mark?", script.isUseDeathMark()));
+                    script.setUseDeathSkulls(ImGui.Checkbox("Use Death Skulls?", script.isUseDeathSkulls()));
                     script.setUseAdrenalineRenewal(ImGui.Checkbox("Drink Adrenaline Renewal?", script.isUseAdrenalineRenewal()));
                     script.setUseWeaponPoison(ImGui.Checkbox("Apply Weapon Poison?", script.isUseWeaponPoison()));
                     script.setUsePocketSlot(ImGui.Checkbox("Activate Pocket Slot (Scripture)?", script.isUsePocketSlot()));
