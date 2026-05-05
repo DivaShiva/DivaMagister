@@ -85,6 +85,13 @@ public class SkeletonScript extends LoopingScript {
     private long invokeDeathCastTime = 0; // Track when Invoke Death was last cast (for 12 second buff duration)
     private boolean shouldCastInvokeDeathAndClickObelisk = false; // Flag to handle completion in main loop
 
+    // Basic Attack component click cache
+    private int cachedBasicAttackComponentId = -1;
+    private int cachedBasicAttackSlot = -1;
+    private int cachedBasicAttackBar = -1;
+    private int lastBasicAttackScanTick = -50;
+    private int mainActionBarNumber = 1; // Which bar preset (1-18) is the main action bar
+
     // GUI colored log
     private static final int GUI_LOG_MAX = 100;
     private final Deque<String> guiLogTexts = new ArrayDeque<>();
@@ -128,10 +135,7 @@ public class SkeletonScript extends LoopingScript {
         rotation.setUseDeathSkulls(useDeathSkulls); // Initialize setting
         
         // Set up Basic Attack handler (ActionBar.useAbility no longer works for it)
-        rotation.setBasicAttackHandler(() -> {
-            // Use component click to trigger basic attack from action bar slot 1
-            return MiniMenu.interact(ComponentAction.COMPONENT.getType(), 0, -1, 96862212);
-        });
+        rotation.setBasicAttackHandler(this::useBasicAttack);
         
         // Load saved config (overrides defaults above)
         loadConfig();
@@ -1349,6 +1353,58 @@ public class SkeletonScript extends LoopingScript {
         return random.nextLong(600, 1200);
     }
 
+    // ==================== Basic Attack ====================
+
+    public boolean useBasicAttack() {
+        if (cachedBasicAttackComponentId == -1) {
+            if (serverTicks - lastBasicAttackScanTick < 50) {
+                return false;
+            }
+            lastBasicAttackScanTick = serverTicks;
+
+            // Scan the user's main action bar only
+            int bar = mainActionBarNumber;
+            for (int slot = 1; slot <= 14; slot++) {
+                try {
+                    net.botwithus.rs3.game.js5.types.StructType struct = ActionBar.getAbilityIn(bar, slot);
+                    if (struct != null) {
+                        String name = ActionBar.getActionName(struct.getParams());
+                        if (name != null && name.toLowerCase().contains("basic") && name.toLowerCase().contains("attack")) {
+                            cachedBasicAttackSlot = slot;
+                            cachedBasicAttackBar = bar;
+                            cachedBasicAttackComponentId = 93716544 + (slot - 1) * 13;
+                            println("[BASIC] Found on bar " + bar + " slot " + slot + " name='" + name + "' componentId=" + cachedBasicAttackComponentId);
+                            break;
+                        }
+                    }
+                } catch (Exception e) { }
+            }
+
+            if (cachedBasicAttackComponentId == -1) {
+                println("[BASIC] Basic Attack not found on bar " + bar + " - will retry in 50 ticks");
+                return false;
+            }
+        }
+
+        MiniMenu.interact(ComponentAction.COMPONENT.getType(), 1, -1, cachedBasicAttackComponentId);
+        lastAbilityServerTick = serverTicks;
+        if (rotation != null) rotation.syncGCD();
+        return true;
+    }
+
+    public int getMainActionBarNumber() {
+        return mainActionBarNumber;
+    }
+
+    public void setMainActionBarNumber(int mainActionBarNumber) {
+        if (this.mainActionBarNumber == mainActionBarNumber) return;
+        this.mainActionBarNumber = Math.max(1, Math.min(18, mainActionBarNumber));
+        // Reset cache so it rescans on the new bar
+        this.cachedBasicAttackComponentId = -1;
+        this.cachedBasicAttackSlot = -1;
+        this.cachedBasicAttackBar = -1;
+    }
+
     // ==================== GUI Log Methods ====================
 
     public void guiLog(String text, float r, float g, float b) {
@@ -1429,6 +1485,7 @@ public class SkeletonScript extends LoopingScript {
             props.setProperty("useWeaponSpecial", String.valueOf(useWeaponSpecial));
             props.setProperty("useDeathSkulls", String.valueOf(useDeathSkulls));
             props.setProperty("useSplitSoul", String.valueOf(useSplitSoul));
+            props.setProperty("mainActionBarNumber", String.valueOf(mainActionBarNumber));
 
             Path configPath = Paths.get(CONFIG_FILE);
             Files.createDirectories(configPath.getParent());
@@ -1464,6 +1521,7 @@ public class SkeletonScript extends LoopingScript {
             useWeaponSpecial = Boolean.parseBoolean(props.getProperty("useWeaponSpecial", "true"));
             useDeathSkulls = Boolean.parseBoolean(props.getProperty("useDeathSkulls", "true"));
             useSplitSoul = Boolean.parseBoolean(props.getProperty("useSplitSoul", "false"));
+            mainActionBarNumber = Integer.parseInt(props.getProperty("mainActionBarNumber", "1"));
 
             // Sync loaded settings to rotation manager
             if (rotation != null) {

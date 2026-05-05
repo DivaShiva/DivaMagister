@@ -119,6 +119,9 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
         ImGui.Text("Cached Abilities: " + script.getCachedAbilityCount());
 
         ImGui.Separator();
+        script.setMainActionBarNumber(ImGui.InputInt("Main Action Bar (1-18)", script.getMainActionBarNumber()));
+
+        ImGui.Separator();
         ImGui.Text("Combat Options");
 
         script.setUseVulnBombs(ImGui.Checkbox("Use Vuln Bombs", script.isUseVulnBombs()));
