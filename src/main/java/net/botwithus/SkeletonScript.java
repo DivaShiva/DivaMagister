@@ -190,6 +190,11 @@ public class SkeletonScript extends LoopingScript {
             return;
         }
         
+        // Skip if not enough time has passed (avoids unnecessary queries)
+        if (serverTicks - lastAbilityServerTick < 3) {
+            return;
+        }
+        
         // Check if player has a target
         LocalPlayer player = Client.getLocalPlayer();
         if (player == null || player.getTarget() == null) {
@@ -218,42 +223,39 @@ public class SkeletonScript extends LoopingScript {
             return;
         }
         
-        // Execute every 3 server ticks (1.8 seconds)
-        if (serverTicks - lastAbilityServerTick >= 3) {
-            // HIGHEST PRIORITY: Check and apply Death Mark if enabled
-            // Only apply once per kill, and only if Invoke Death buff is not active
-            if (useDeathMark && !deathMarkAppliedThisKill) {
-                // Check if Invoke Death buff is still active (12 second duration)
-                long timeSinceInvokeDeath = System.currentTimeMillis() - invokeDeathCastTime;
-                boolean invokeDeathBuffActive = timeSinceInvokeDeath < 12000; // 12 seconds
-                
-                if (invokeDeathBuffActive) {
-                    // Buff is active, mark as applied silently
+        // HIGHEST PRIORITY: Check and apply Death Mark if enabled
+        // Only apply once per kill, and only if Invoke Death buff is not active
+        if (useDeathMark && !deathMarkAppliedThisKill) {
+            // Check if Invoke Death buff is still active (12 second duration)
+            long timeSinceInvokeDeath = System.currentTimeMillis() - invokeDeathCastTime;
+            boolean invokeDeathBuffActive = timeSinceInvokeDeath < 12000; // 12 seconds
+            
+            if (invokeDeathBuffActive) {
+                // Buff is active, mark as applied silently
+                deathMarkAppliedThisKill = true;
+            } else {
+                // Buff expired, let rotation manager apply it
+                boolean deathMarkUsed = rotation.ensureDeathMarked();
+                if (deathMarkUsed) {
                     deathMarkAppliedThisKill = true;
-                } else {
-                    // Buff expired, let rotation manager apply it
-                    boolean deathMarkUsed = rotation.ensureDeathMarked();
-                    if (deathMarkUsed) {
-                        deathMarkAppliedThisKill = true;
-                        invokeDeathCastTime = System.currentTimeMillis(); // Track cast time
-                        lastAbilityServerTick = serverTicks;
-                        println("Tick " + serverTicks + " - Using: Invoke Death");
-                        return; // Skip normal rotation this tick
-                    }
+                    invokeDeathCastTime = System.currentTimeMillis(); // Track cast time
+                    lastAbilityServerTick = serverTicks;
+                    println("Tick " + serverTicks + " - Using: Invoke Death");
+                    return; // Skip normal rotation this tick
                 }
             }
-            
-            // Check and apply vulnerability if enabled
-            if (useVulnBombs) {
-                rotation.ensureVulned();
-            }
-            
-            // Execute normal rotation
-            if (rotation.execute()) {
-                lastAbilityServerTick = serverTicks;
-                String ability = rotation.getLastAbilityUsed();
-                println("Tick " + serverTicks + " - Using: " + ability);
-            }
+        }
+        
+        // Check and apply vulnerability if enabled
+        if (useVulnBombs) {
+            rotation.ensureVulned();
+        }
+        
+        // Execute normal rotation
+        if (rotation.execute()) {
+            lastAbilityServerTick = serverTicks;
+            String ability = rotation.getLastAbilityUsed();
+            println("Tick " + serverTicks + " - Using: " + ability);
         }
     }
     
@@ -522,7 +524,8 @@ public class SkeletonScript extends LoopingScript {
             familiarCheckedThisKill = true;
         }
         
-        // Check if Magister exists
+        // Only check if boss is dead periodically (rotation handles combat via ServerTickedEvent)
+        // The rotation's executeRotation() already validates boss is alive every tick
         EntityResultSet<net.botwithus.rs3.game.scene.entities.characters.npc.Npc> results = 
             NpcQuery.newQuery()
                 .name("The Magister", "The Magister (level: 899)")
@@ -535,21 +538,18 @@ public class SkeletonScript extends LoopingScript {
             return random.nextLong(300, 600);
         }
         
-        net.botwithus.rs3.game.scene.entities.characters.npc.Npc magister = results.nearest();
-        
-        // Check if we're targeting the Magister
-        if (player.getTarget() == null || !player.getTarget().equals(magister)) {
-            if (magister.interact("Attack")) {
+        // Ensure we have a target — only interact if we don't
+        if (player.getTarget() == null) {
+            net.botwithus.rs3.game.scene.entities.characters.npc.Npc magister = results.nearest();
+            if (magister != null && magister.interact("Attack")) {
                 println("[MAGISTER] Targeting The Magister");
-                return random.nextLong(800, 1200);
-            } else {
-                return random.nextLong(600, 1000);
             }
+            return random.nextLong(800, 1200);
         }
         
         // We're fighting, rotation handles combat automatically via ServerTickedEvent
-        // Just wait and let the rotation do its thing
-        return random.nextLong(600, 1000);
+        // Sleep longer to reduce query frequency from onLoop
+        return random.nextLong(1800, 2400);
     }
 
     private long handleWaitingForLoot(LocalPlayer player) {
