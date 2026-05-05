@@ -43,6 +43,11 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
             ImGui.Text("Kills: " + script.getKillCount());
             ImGui.Text(String.format("%.1f/hr", script.getKillsPerHour()));
 
+            ImGui.Separator();
+            if (ImGui.Selectable("Save Config", false, 0)) {
+                script.saveConfig();
+            }
+
             ImGui.EndChild();
 
             ImGui.SameLine();

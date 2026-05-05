@@ -33,12 +33,19 @@ import net.botwithus.rs3.game.queries.results.ResultSet;
 import net.botwithus.rs3.game.scene.entities.item.GroundItem;
 import net.botwithus.rs3.game.Item;
 
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.Properties;
 import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -91,6 +98,9 @@ public class SkeletonScript extends LoopingScript {
     private static final float[] COLOR_PURPLE = {0.75f, 0.0f, 0.75f};
     private boolean autoScroll = true;
 
+    // Config file path
+    private static final String CONFIG_FILE = System.getProperty("user.home") + "/.botwithus/DivaMagister.properties";
+
     enum BotState {
         IDLE,
         DETERMINING_STATE,
@@ -116,6 +126,9 @@ public class SkeletonScript extends LoopingScript {
         rotation.setUseEssenceOfFinality(useEssenceOfFinality); // Initialize setting
         rotation.setUseWeaponSpecial(useWeaponSpecial); // Initialize setting
         rotation.setUseDeathSkulls(useDeathSkulls); // Initialize setting
+        
+        // Load saved config (overrides defaults above)
+        loadConfig();
         
         // Subscribe to server tick events
         subscribe(ServerTickedEvent.class, event -> {
@@ -1388,6 +1401,72 @@ public class SkeletonScript extends LoopingScript {
 
     public RotationManager getRotation() {
         return rotation;
+    }
+
+    // ==================== Config Save/Load ====================
+
+    public void saveConfig() {
+        try {
+            Properties props = new Properties();
+            props.setProperty("useVulnBombs", String.valueOf(useVulnBombs));
+            props.setProperty("useDeathMark", String.valueOf(useDeathMark));
+            props.setProperty("useAdrenalineRenewal", String.valueOf(useAdrenalineRenewal));
+            props.setProperty("useWeaponPoison", String.valueOf(useWeaponPoison));
+            props.setProperty("usePocketSlot", String.valueOf(usePocketSlot));
+            props.setProperty("useFamiliar", String.valueOf(useFamiliar));
+            props.setProperty("useEssenceOfFinality", String.valueOf(useEssenceOfFinality));
+            props.setProperty("useWeaponSpecial", String.valueOf(useWeaponSpecial));
+            props.setProperty("useDeathSkulls", String.valueOf(useDeathSkulls));
+            props.setProperty("useSplitSoul", String.valueOf(useSplitSoul));
+
+            Path configPath = Paths.get(CONFIG_FILE);
+            Files.createDirectories(configPath.getParent());
+            try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
+                props.store(fos, "DivaMagister Settings");
+            }
+            println("[CONFIG] Settings saved to " + CONFIG_FILE);
+        } catch (IOException e) {
+            println("[CONFIG] Failed to save settings: " + e.getMessage());
+        }
+    }
+
+    public void loadConfig() {
+        Path configPath = Paths.get(CONFIG_FILE);
+        if (!Files.exists(configPath)) {
+            println("[CONFIG] No saved config found, using defaults");
+            return;
+        }
+
+        try {
+            Properties props = new Properties();
+            try (FileInputStream fis = new FileInputStream(configPath.toFile())) {
+                props.load(fis);
+            }
+
+            useVulnBombs = Boolean.parseBoolean(props.getProperty("useVulnBombs", "true"));
+            useDeathMark = Boolean.parseBoolean(props.getProperty("useDeathMark", "true"));
+            useAdrenalineRenewal = Boolean.parseBoolean(props.getProperty("useAdrenalineRenewal", "true"));
+            useWeaponPoison = Boolean.parseBoolean(props.getProperty("useWeaponPoison", "true"));
+            usePocketSlot = Boolean.parseBoolean(props.getProperty("usePocketSlot", "true"));
+            useFamiliar = Boolean.parseBoolean(props.getProperty("useFamiliar", "true"));
+            useEssenceOfFinality = Boolean.parseBoolean(props.getProperty("useEssenceOfFinality", "true"));
+            useWeaponSpecial = Boolean.parseBoolean(props.getProperty("useWeaponSpecial", "true"));
+            useDeathSkulls = Boolean.parseBoolean(props.getProperty("useDeathSkulls", "true"));
+            useSplitSoul = Boolean.parseBoolean(props.getProperty("useSplitSoul", "false"));
+
+            // Sync loaded settings to rotation manager
+            if (rotation != null) {
+                rotation.setUseAdrenalineRenewal(useAdrenalineRenewal);
+                rotation.setUseSplitSoul(useSplitSoul);
+                rotation.setUseEssenceOfFinality(useEssenceOfFinality);
+                rotation.setUseWeaponSpecial(useWeaponSpecial);
+                rotation.setUseDeathSkulls(useDeathSkulls);
+            }
+
+            println("[CONFIG] Settings loaded from " + CONFIG_FILE);
+        } catch (IOException e) {
+            println("[CONFIG] Failed to load settings: " + e.getMessage());
+        }
     }
    
 }
