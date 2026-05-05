@@ -33,7 +33,11 @@ import net.botwithus.rs3.game.queries.results.ResultSet;
 import net.botwithus.rs3.game.scene.entities.item.GroundItem;
 import net.botwithus.rs3.game.Item;
 
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Random;
 import java.util.regex.Matcher;
@@ -73,6 +77,19 @@ public class SkeletonScript extends LoopingScript {
     private long presetLoadedTime = 0;
     private long invokeDeathCastTime = 0; // Track when Invoke Death was last cast (for 12 second buff duration)
     private boolean shouldCastInvokeDeathAndClickObelisk = false; // Flag to handle completion in main loop
+
+    // GUI colored log
+    private static final int GUI_LOG_MAX = 100;
+    private final Deque<String> guiLogTexts = new ArrayDeque<>();
+    private final Deque<float[]> guiLogColors = new ArrayDeque<>();
+    private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
+    private static final float[] COLOR_WHITE = {1.0f, 1.0f, 1.0f};
+    private static final float[] COLOR_YELLOW = {1.0f, 1.0f, 0.0f};
+    private static final float[] COLOR_GREEN = {0.2f, 0.8f, 0.2f};
+    private static final float[] COLOR_RED = {1.0f, 0.2f, 0.2f};
+    private static final float[] COLOR_CYAN = {0.0f, 1.0f, 1.0f};
+    private static final float[] COLOR_PURPLE = {0.75f, 0.0f, 0.75f};
+    private boolean autoScroll = true;
 
     enum BotState {
         IDLE,
@@ -1306,6 +1323,71 @@ public class SkeletonScript extends LoopingScript {
         }
         
         return random.nextLong(600, 1200);
+    }
+
+    // ==================== GUI Log Methods ====================
+
+    public void guiLog(String text, float r, float g, float b) {
+        String ts = LocalTime.now().format(TIME_FMT);
+        String line = String.format("[%s] > %s", ts, text);
+        guiLogTexts.addLast(line);
+        guiLogColors.addLast(new float[]{r, g, b});
+        if (guiLogTexts.size() > GUI_LOG_MAX) {
+            guiLogTexts.removeFirst();
+            guiLogColors.removeFirst();
+        }
+    }
+
+    public void log(String text) {
+        println(text);
+        guiLog(text, COLOR_WHITE[0], COLOR_WHITE[1], COLOR_WHITE[2]);
+    }
+
+    public void logInfo(String text) {
+        println(text);
+        guiLog(text, COLOR_CYAN[0], COLOR_CYAN[1], COLOR_CYAN[2]);
+    }
+
+    public void logSuccess(String text) {
+        println(text);
+        guiLog(text, COLOR_GREEN[0], COLOR_GREEN[1], COLOR_GREEN[2]);
+    }
+
+    public void logError(String text) {
+        println(text);
+        guiLog(text, COLOR_RED[0], COLOR_RED[1], COLOR_RED[2]);
+    }
+
+    public void logWarn(String text) {
+        println(text);
+        guiLog(text, COLOR_YELLOW[0], COLOR_YELLOW[1], COLOR_YELLOW[2]);
+    }
+
+    public void logMisc(String text) {
+        println(text);
+        guiLog(text, COLOR_PURPLE[0], COLOR_PURPLE[1], COLOR_PURPLE[2]);
+    }
+
+    public List<String> getGuiLogTexts() {
+        return new ArrayList<>(guiLogTexts);
+    }
+
+    public List<float[]> getGuiLogColors() {
+        return new ArrayList<>(guiLogColors);
+    }
+
+    public boolean isAutoScroll() {
+        return autoScroll;
+    }
+
+    public void setAutoScroll(boolean v) {
+        this.autoScroll = v;
+    }
+
+    // ==================== Rotation Accessor ====================
+
+    public RotationManager getRotation() {
+        return rotation;
     }
    
 }
