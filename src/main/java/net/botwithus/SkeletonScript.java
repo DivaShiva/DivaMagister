@@ -642,6 +642,7 @@ public class SkeletonScript extends LoopingScript {
     }
     
     public void setUseSplitSoul(boolean useSplitSoul) {
+        if (this.useSplitSoul == useSplitSoul) return;
         this.useSplitSoul = useSplitSoul;
         if (rotation != null) {
             rotation.setUseSplitSoul(useSplitSoul);
@@ -725,6 +726,7 @@ public class SkeletonScript extends LoopingScript {
     }
     
     public void setUseAdrenalineRenewal(boolean useAdrenalineRenewal) {
+        if (this.useAdrenalineRenewal == useAdrenalineRenewal) return;
         this.useAdrenalineRenewal = useAdrenalineRenewal;
         if (rotation != null) {
             rotation.setUseAdrenalineRenewal(useAdrenalineRenewal);
@@ -760,6 +762,7 @@ public class SkeletonScript extends LoopingScript {
     }
     
     public void setUseEssenceOfFinality(boolean useEssenceOfFinality) {
+        if (this.useEssenceOfFinality == useEssenceOfFinality) return;
         this.useEssenceOfFinality = useEssenceOfFinality;
         if (rotation != null) {
             rotation.setUseEssenceOfFinality(useEssenceOfFinality);
@@ -771,6 +774,7 @@ public class SkeletonScript extends LoopingScript {
     }
     
     public void setUseWeaponSpecial(boolean useWeaponSpecial) {
+        if (this.useWeaponSpecial == useWeaponSpecial) return;
         this.useWeaponSpecial = useWeaponSpecial;
         if (rotation != null) {
             rotation.setUseWeaponSpecial(useWeaponSpecial);
@@ -782,6 +786,7 @@ public class SkeletonScript extends LoopingScript {
     }
     
     public void setUseDeathSkulls(boolean useDeathSkulls) {
+        if (this.useDeathSkulls == useDeathSkulls) return;
         this.useDeathSkulls = useDeathSkulls;
         if (rotation != null) {
             rotation.setUseDeathSkulls(useDeathSkulls);

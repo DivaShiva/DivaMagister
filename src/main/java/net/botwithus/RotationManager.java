@@ -154,7 +154,6 @@ public class RotationManager {
      */
     public void setSpendAdrenaline(boolean spend) {
         this.spend = spend;
-        debugLog("Spend adrenaline set to: " + spend);
     }
     
     /**
@@ -1147,7 +1146,6 @@ public class RotationManager {
     
     public void setUseEssenceOfFinality(boolean useEssenceOfFinality) {
         this.useEssenceOfFinality = useEssenceOfFinality;
-        debugLog("UseEssenceOfFinality set to: " + useEssenceOfFinality);
     }
     
     public boolean isUseEssenceOfFinality() {
