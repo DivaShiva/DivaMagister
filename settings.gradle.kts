@@ -1,2 +1,2 @@
-rootProject.name = "BwuJavaSkeleton"
+rootProject.name = "DivaMagister"
 
