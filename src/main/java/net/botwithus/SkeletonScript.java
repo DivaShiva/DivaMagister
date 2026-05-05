@@ -127,6 +127,12 @@ public class SkeletonScript extends LoopingScript {
         rotation.setUseWeaponSpecial(useWeaponSpecial); // Initialize setting
         rotation.setUseDeathSkulls(useDeathSkulls); // Initialize setting
         
+        // Set up Basic Attack handler (ActionBar.useAbility no longer works for it)
+        rotation.setBasicAttackHandler(() -> {
+            // Use component click to trigger basic attack from action bar slot 1
+            return MiniMenu.interact(ComponentAction.COMPONENT.getType(), 0, -1, 96862212);
+        });
+        
         // Load saved config (overrides defaults above)
         loadConfig();
         
