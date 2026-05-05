@@ -198,6 +198,11 @@ public class SkeletonScriptGraphicsContext extends ScriptGraphicsContext {
         }
         ImGui.SameLine();
         ImGui.Text("Fix stuck cooldowns");
+
+        ImGui.Separator();
+        if (ImGui.Checkbox("Verbose Debug Logging", script.isDebugMode())) {
+            script.setDebugMode(!script.isDebugMode());
+        }
     }
 
     // ==================== LOG PAGE ====================

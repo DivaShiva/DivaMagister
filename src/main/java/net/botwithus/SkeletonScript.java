@@ -125,7 +125,7 @@ public class SkeletonScript extends LoopingScript {
         
         // Initialize improvise rotation
         rotation = new RotationManager("Necromancy Improvise", true); // true = spend adrenaline
-        rotation.setDebug(true);
+        rotation.setDebug(false);
         rotation.setLogger(this::println); // Use script's println for logging
         rotation.setUseAdrenalineRenewal(useAdrenalineRenewal); // Initialize setting
         rotation.setUseSplitSoul(useSplitSoul); // Initialize setting
@@ -267,8 +267,8 @@ public class SkeletonScript extends LoopingScript {
             
             int currentCycle = Client.getClientCycle();
             
-            // Log every 10 game ticks (6 seconds at 0.6s per tick) to reduce query frequency
-            if (lastLoggedClientCycle == 0 || currentCycle - lastLoggedClientCycle >= 10) {
+            // Log every 25 game ticks (~15 seconds) to reduce spam
+            if (lastLoggedClientCycle == 0 || currentCycle - lastLoggedClientCycle >= 25) {
                 logNecromancyStatus(currentCycle);
                 lastLoggedClientCycle = currentCycle;
             }
@@ -1468,6 +1468,23 @@ public class SkeletonScript extends LoopingScript {
 
     public RotationManager getRotation() {
         return rotation;
+    }
+
+    // ==================== Debug Mode ====================
+
+    private boolean debugMode = false;
+
+    public boolean isDebugMode() {
+        return debugMode;
+    }
+
+    public void setDebugMode(boolean debugMode) {
+        if (this.debugMode == debugMode) return;
+        this.debugMode = debugMode;
+        if (rotation != null) {
+            rotation.setDebug(debugMode);
+        }
+        println("[CONFIG] Debug mode: " + (debugMode ? "ON" : "OFF"));
     }
 
     // ==================== Config Save/Load ====================

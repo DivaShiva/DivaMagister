@@ -352,36 +352,16 @@ public class RotationManager {
                Backpack.interact(itemName, "Use");
     }
     
-    // private boolean canTrigger() {
-    //     long currentTick = Client.getClientCycle();
-    //     long ticksSinceLast = currentTick - lastExecutionTick;
-    //     if (ticksSinceLast < 3) {
-    //         if (logger != null) {
-    //             logger.accept("[GCD] Blocked - only " + ticksSinceLast + " cycles since last ability (need 3). Cycle: " + currentTick);
-    //         }
-    //         return false;
-    //     }
-    //     return true;
-    // }
-
     private boolean canTrigger() {
        int realGcd = gcdTicksRemaining();
        long ticksSinceLast = serverTick - lastExecutionTick;
 
-       if (serverTick % 5 == 0) {
-           logger.accept("[RM.canTrig] realGcd=" + realGcd + " ticksSince=" + ticksSinceLast + " (tick=" + serverTick + " lastExec=" + lastExecutionTick + ")");
-       }
-
        if (realGcd > 1) {
-           if (logger != null) {
-               logger.accept("[GCD] Blocked - real GCD " + realGcd + " ticks remaining. Tick: " + serverTick);
-           }
+           debugLog("[GCD] Blocked - real GCD " + realGcd + " ticks remaining. Tick: " + serverTick);
            return false;
        }
        if (ticksSinceLast < 3) {
-           if (logger != null) {
-               logger.accept("[GCD] Blocked - only " + ticksSinceLast + " cycles since last ability (need 3). Tick: " + serverTick);
-           }
+           debugLog("[GCD] Blocked - only " + ticksSinceLast + " cycles since last ability (need 3). Tick: " + serverTick);
            return false;
        }
        return true;
@@ -406,9 +386,7 @@ public class RotationManager {
      */
     public void syncGCD() {
         lastExecutionTick = serverTick;
-        if (logger != null) {
-            logger.accept("[GCD] Synced from external cast at server tick: " + lastExecutionTick);
-        }
+        debugLog("[GCD] Synced from external cast at server tick: " + lastExecutionTick);
     }
     
     /**
@@ -1125,9 +1103,6 @@ public class RotationManager {
                 // Game says ready, our tracking says on CD — ability didn't fire
                 debugLog("[VALIDATION] ⚠ " + previousAbilityUsed + " real CD=0 but internal CD=" 
                     + internalCooldown + " — didn't fire, clearing tracking");
-                if (logger != null) {
-                    logger.accept("[VALIDATION] " + previousAbilityUsed + " didn't fire (real CD=0, internal=" + internalCooldown + ") — cleared, now available");
-                }
                 lastUsedTick.remove(previousAbilityUsed);
             } else if (realCooldown > 0) {
                 debugLog("[VALIDATION] ✓ " + previousAbilityUsed + " confirmed on CD (real: " + realCooldown + ", internal: " + internalCooldown + ")");
