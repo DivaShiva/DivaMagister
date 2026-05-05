@@ -228,8 +228,7 @@ public class SkeletonScript extends LoopingScript {
                 boolean invokeDeathBuffActive = timeSinceInvokeDeath < 12000; // 12 seconds
                 
                 if (invokeDeathBuffActive) {
-                    // Buff is active, mark as applied and skip rotation manager's ensureDeathMarked
-                    println("[ROTATION] Invoke Death buff active (" + (12 - timeSinceInvokeDeath / 1000) + "s remaining), skipping recast");
+                    // Buff is active, mark as applied silently
                     deathMarkAppliedThisKill = true;
                 } else {
                     // Buff expired, let rotation manager apply it
@@ -259,16 +258,18 @@ public class SkeletonScript extends LoopingScript {
     }
     
     private void checkAndLog() {
+        // Status logging handled only when debug mode is on
+        if (!debugMode) return;
+        
         try {
-            // Only log when in FIGHTING_MAGISTER state
             if (botState != BotState.FIGHTING_MAGISTER) {
                 return;
             }
             
             int currentCycle = Client.getClientCycle();
             
-            // Log every 25 game ticks (~15 seconds) to reduce spam
-            if (lastLoggedClientCycle == 0 || currentCycle - lastLoggedClientCycle >= 25) {
+            // Log every 50 game ticks (~30 seconds)
+            if (lastLoggedClientCycle == 0 || currentCycle - lastLoggedClientCycle >= 50) {
                 logNecromancyStatus(currentCycle);
                 lastLoggedClientCycle = currentCycle;
             }
@@ -279,7 +280,6 @@ public class SkeletonScript extends LoopingScript {
     
     private void logNecromancyStatus(int clientCycle) {
         try {
-            // Target debuffs using varbits
             boolean vulned = false;
             boolean deathMarked = false;
             boolean bloated = false;
@@ -292,20 +292,9 @@ public class SkeletonScript extends LoopingScript {
                 livingDeathVarValue = VarManager.getVarValue(VarDomainType.PLAYER, 11059);
             } catch (Exception e) {
                 println("[ERROR] Exception querying varbits in logNecromancyStatus: " + e.getMessage());
-                return; // Skip logging if we can't get the data
+                return;
             }
             
-            StringBuilder active = new StringBuilder();
-            if (vulned) active.append("Vulnerability, ");
-            if (bloated) active.append("Bloat, ");
-            if (deathMarked) active.append("Death Mark, ");
-            if (active.length() > 0) {
-                active.setLength(active.length() - 2);
-            } else {
-                active.append("None");
-            }
-            
-            // Living Death status (-1 if inactive, tick number if active)
             boolean livingDeath = livingDeathVarValue != -1;
             
             // Track when Living Death becomes active
@@ -315,14 +304,17 @@ public class SkeletonScript extends LoopingScript {
                 livingDeathActivatedServerTick = -1;
             }
             
-            println("Client Cycle: " + clientCycle + " | Server Ticks: " + serverTicks);
-            println("Target Debuffs: " + active);
+            // Single compact status line
+            StringBuilder sb = new StringBuilder();
+            sb.append("[STATUS] Tick:").append(serverTicks);
+            if (vulned) sb.append(" Vuln");
+            if (bloated) sb.append(" Bloat");
+            if (deathMarked) sb.append(" DM");
             if (livingDeath) {
                 int ticksActive = serverTicks - livingDeathActivatedServerTick;
-                println("Living Death: ACTIVE (server tick started: " + livingDeathActivatedServerTick + ", active for: " + ticksActive + " server ticks)");
-            } else {
-                println("Living Death: Inactive");
+                sb.append(" LD(").append(ticksActive).append("t)");
             }
+            println(sb.toString());
         } catch (Exception e) {
             println("[ERROR] Exception in logNecromancyStatus: " + e.getMessage());
         }
@@ -547,12 +539,10 @@ public class SkeletonScript extends LoopingScript {
         
         // Check if we're targeting the Magister
         if (player.getTarget() == null || !player.getTarget().equals(magister)) {
-            println("[MAGISTER] Targeting The Magister");
             if (magister.interact("Attack")) {
-                println("[MAGISTER] Successfully targeted Magister");
+                println("[MAGISTER] Targeting The Magister");
                 return random.nextLong(800, 1200);
             } else {
-                println("[MAGISTER] Failed to target Magister");
                 return random.nextLong(600, 1000);
             }
         }
