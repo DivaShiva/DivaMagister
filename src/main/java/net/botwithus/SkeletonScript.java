@@ -72,7 +72,6 @@ public class SkeletonScript extends LoopingScript {
     private RotationManager rotation;
     private int killCount = 0;
     private long scriptStartTime = 0;
-    private boolean hasInteractedWithLootAll = false;
     private int cumulativeLootValue = 0;
     private boolean deathMarkAppliedThisKill = false;
     private boolean overloadCheckedThisKill = false;
@@ -84,6 +83,18 @@ public class SkeletonScript extends LoopingScript {
     private long presetLoadedTime = 0;
     private long invokeDeathCastTime = 0; // Track when Invoke Death was last cast (for 12 second buff duration)
     private boolean shouldCastInvokeDeathAndClickObelisk = false; // Flag to handle completion in main loop
+    // Loot sub-states
+    private enum LootState {
+        INTERACT_ITEM,      // Click ground item to open loot interface
+        WAIT_FOR_INTERFACE, // Wait for loot interface to open
+        LOOT_ALL,           // Click Loot All button
+        POST_LOOT,          // Cast Invoke Death and transition
+        DONE                // Looting complete
+    }
+    private LootState lootState = LootState.INTERACT_ITEM;
+    private long lootStateStartTime = 0;
+    private int lootRetryCount = 0;
+
     private int lastSummonAttemptTick = -25; // Familiar summon cooldown, init to ready
     private int lastPotionTick = -2; // Global potion cooldown = 2 ticks (1.2 seconds), init to ready
 
@@ -838,129 +849,156 @@ public class SkeletonScript extends LoopingScript {
     }
     
     private long handleLooting(LocalPlayer player) {
-        println("[LOOT] Starting loot collection");
-        loot();
-        return random.nextLong(1000, 2000);
+        switch (lootState) {
+            case INTERACT_ITEM -> {
+                return handleLootInteract();
+            }
+            case WAIT_FOR_INTERFACE -> {
+                return handleLootWaitInterface();
+            }
+            case LOOT_ALL -> {
+                return handleLootAll();
+            }
+            case POST_LOOT -> {
+                return handlePostLoot();
+            }
+            default -> {
+                finishLooting();
+                return random.nextLong(600, 1000);
+            }
+        }
     }
     
-    private void loot() {
-        hasInteractedWithLootAll = false;
+    private long handleLootInteract() {
+        // Check if loot interface is already open (e.g. from area loot)
+        if (Interfaces.isOpen(1622)) {
+            println("[LOOT] Interface already open");
+            lootState = LootState.LOOT_ALL;
+            return random.nextLong(300, 600);
+        }
         
-        // 1) grab everything on the ground
+        // Check for items on ground
         var itemsOnFloor = GroundItemQuery.newQuery().results();
         if (itemsOnFloor.isEmpty()) {
-            println("[LOOT] No items on floor, continuing");
-            rotation.resetDeathMark();
-            deathMarkAppliedThisKill = false;
-            
-            // Check if we have keys to continue, otherwise go to bank
-            if (!Backpack.contains("Key to the Crossing")) {
-                println("[LOOT] No keys remaining - going to bank");
-                botState = BotState.BANKING;
-            } else {
-                println("[LOOT] Keys available - returning to obelisk");
-                botState = BotState.TOUCHING_OBELISK;
-            }
-            return;
+            println("[LOOT] No items on floor");
+            finishLooting();
+            return random.nextLong(600, 1000);
         }
         
-        // 3) pick one at random to actually take
         GroundItem gi = itemsOnFloor.random();
         if (gi == null) {
-            println("[LOOT] No valid ground item, continuing");
-            rotation.resetDeathMark();
-            deathMarkAppliedThisKill = false;
-            
-            // Check if we have keys to continue, otherwise go to bank
-            if (!Backpack.contains("Key to the Crossing")) {
-                println("[LOOT] No keys remaining - going to bank");
-                botState = BotState.BANKING;
-            } else {
-                println("[LOOT] Keys available - returning to obelisk");
-                botState = BotState.TOUCHING_OBELISK;
-            }
-            return;
+            println("[LOOT] No valid ground item");
+            finishLooting();
+            return random.nextLong(600, 1000);
         }
         
-        // 4) log which one you're taking
         println("[LOOT] Taking " + gi.getStackSize() + "x " + gi.getName());
-        
-        // 6) interact
         gi.interact("Take");
-        Execution.delay(random.nextLong(1200, 2000));
-        
-        // 7) retry if the interface didn't open
-        boolean interfaceOpened = Execution.delayUntil(
-                15_000,
-                () -> Interfaces.isOpen(1622)
-        );
-        if (!interfaceOpened) {
-            println("[LOOT] Interface 1622 did not open. Attempting to interact again.");
-            if (gi.interact("Take")) {
-                println("[LOOT] Retrying take of " + gi.getName());
-                Execution.delay(random.nextLong(1800, 3000));
-            }
-        }
-        
-        // 8) press "Loot All"
-        LootAll();
-        
-        // 9) update your cumulative-value tracker
-        updateAndDisplayCumulativeLootValue();
+        lootState = LootState.WAIT_FOR_INTERFACE;
+        lootStateStartTime = System.currentTimeMillis();
+        lootRetryCount = 0;
+        return random.nextLong(800, 1200);
     }
     
-    private void LootAll() {
-        if (!hasInteractedWithLootAll) {
-            Execution.delay(random.nextLong(500, 1000));
-            
-            ComponentQuery lootAllQuery = ComponentQuery.newQuery(1622);
-            List<Component> components = lootAllQuery.componentIndex(22).results().stream().toList();
-            
-            if (!components.isEmpty()) {
-                Component lootAllComponent = components.get(0);
-                if (lootAllComponent.interact()) {
-                    println("[LOOT] Clicked 'Loot All' successfully");
-                    hasInteractedWithLootAll = true;
-                    
-                    // Cast Invoke Death AFTER looting (so buff doesn't expire during loot process)
-                    if (useDeathMark) {
-                        long timeSinceInvokeDeath = System.currentTimeMillis() - invokeDeathCastTime;
-                        boolean invokeDeathBuffActive = timeSinceInvokeDeath < 12000; // 12 seconds
-                        
-                        if (!invokeDeathBuffActive) {
-                            println("[LOOT] Casting Invoke Death after looting (buff expired " + (timeSinceInvokeDeath / 1000) + "s ago)");
-                            Execution.delay(random.nextLong(300, 600)); // Small delay after loot
-                            boolean deathMarkUsed = ActionBar.useAbility("Invoke Death");
-                            if (deathMarkUsed) {
-                                invokeDeathCastTime = System.currentTimeMillis();
-                                println("[LOOT] ✓ Invoke Death cast - buff active for 12 seconds");
-                                Execution.delay(random.nextLong(600, 900));
-                            } else {
-                                println("[LOOT] ✗ Failed to cast Invoke Death");
-                            }
-                        } else {
-                            println("[LOOT] Invoke Death buff still active (" + (12 - timeSinceInvokeDeath / 1000) + "s remaining)");
-                        }
+    private long handleLootWaitInterface() {
+        // Check if interface opened
+        if (Interfaces.isOpen(1622)) {
+            lootState = LootState.LOOT_ALL;
+            return random.nextLong(300, 600);
+        }
+        
+        // Timeout after 5 seconds
+        long elapsed = System.currentTimeMillis() - lootStateStartTime;
+        if (elapsed > 5000) {
+            if (lootRetryCount < 1) {
+                // Retry once — click another ground item
+                println("[LOOT] Interface didn't open, retrying...");
+                var itemsOnFloor = GroundItemQuery.newQuery().results();
+                if (!itemsOnFloor.isEmpty()) {
+                    GroundItem gi = itemsOnFloor.random();
+                    if (gi != null) {
+                        gi.interact("Take");
                     }
-                    
-                    // Reset Death Mark
-                    rotation.resetDeathMark();
-                    deathMarkAppliedThisKill = false;
-                    
-                    // Check if we have keys to continue, otherwise go to bank
-                    if (!Backpack.contains("Key to the Crossing")) {
-                        println("[LOOT] No keys remaining - going to bank");
-                        botState = BotState.BANKING;
-                    } else {
-                        println("[LOOT] Keys available - returning to obelisk");
-                        botState = BotState.TOUCHING_OBELISK;
-                    }
-                } else {
-                    println("[LOOT] Failed to click 'Loot All'");
                 }
+                lootRetryCount++;
+                lootStateStartTime = System.currentTimeMillis();
+                return random.nextLong(800, 1200);
             } else {
-                println("[LOOT] 'Loot All' component not found");
+                // Give up after retry
+                println("[LOOT] Interface failed to open after retry, skipping");
+                finishLooting();
+                return random.nextLong(600, 1000);
             }
+        }
+        
+        // Still waiting
+        return random.nextLong(400, 700);
+    }
+    
+    private long handleLootAll() {
+        if (!Interfaces.isOpen(1622)) {
+            // Interface closed unexpectedly
+            println("[LOOT] Interface closed unexpectedly");
+            finishLooting();
+            return random.nextLong(600, 1000);
+        }
+        
+        // Update loot value tracker
+        updateAndDisplayCumulativeLootValue();
+        
+        // Click Loot All
+        ComponentQuery lootAllQuery = ComponentQuery.newQuery(1622);
+        List<Component> components = lootAllQuery.componentIndex(22).results().stream().toList();
+        
+        if (!components.isEmpty()) {
+            Component lootAllComponent = components.get(0);
+            if (lootAllComponent.interact()) {
+                println("[LOOT] Clicked 'Loot All' successfully");
+                lootState = LootState.POST_LOOT;
+                return random.nextLong(600, 1000);
+            } else {
+                println("[LOOT] Failed to click 'Loot All'");
+                return random.nextLong(400, 700);
+            }
+        } else {
+            println("[LOOT] 'Loot All' component not found");
+            finishLooting();
+            return random.nextLong(600, 1000);
+        }
+    }
+    
+    private long handlePostLoot() {
+        // Cast Invoke Death after looting if needed
+        if (useDeathMark) {
+            long timeSinceInvokeDeath = System.currentTimeMillis() - invokeDeathCastTime;
+            boolean invokeDeathBuffActive = timeSinceInvokeDeath < 12000;
+            
+            if (!invokeDeathBuffActive) {
+                println("[LOOT] Casting Invoke Death after looting");
+                boolean deathMarkUsed = ActionBar.useAbility("Invoke Death");
+                if (deathMarkUsed) {
+                    invokeDeathCastTime = System.currentTimeMillis();
+                    println("[LOOT] ✓ Invoke Death cast");
+                }
+            }
+        }
+        
+        finishLooting();
+        return random.nextLong(600, 1000);
+    }
+    
+    private void finishLooting() {
+        lootState = LootState.INTERACT_ITEM; // Reset for next time
+        rotation.resetDeathMark();
+        deathMarkAppliedThisKill = false;
+        
+        // Check if we have keys to continue, otherwise go to bank
+        if (!Backpack.contains("Key to the Crossing")) {
+            println("[LOOT] No keys remaining - going to bank");
+            botState = BotState.BANKING;
+        } else {
+            println("[LOOT] Keys available - returning to obelisk");
+            botState = BotState.TOUCHING_OBELISK;
         }
     }
     
