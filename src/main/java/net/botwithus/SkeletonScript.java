@@ -946,9 +946,9 @@ public class SkeletonScript extends LoopingScript {
         }
         
         // Click Loot All using MiniMenu (more reliable than component.interact)
-        // Interface 1622, component 22 = Loot All button
-        // Component ID = (1622 << 16) | 22 = 106299414
-        boolean clicked = MiniMenu.interact(ComponentAction.COMPONENT.getType(), 0, -1, 106299414);
+        // Interface 1622, component 21 = Loot All button
+        // Component ID = (1622 << 16) | 21 = 106299413
+        boolean clicked = MiniMenu.interact(ComponentAction.COMPONENT.getType(), 1, -1, 106299413);
         
         if (clicked) {
             println("[LOOT] Clicked 'Loot All' successfully");
