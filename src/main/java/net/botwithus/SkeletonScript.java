@@ -1150,7 +1150,7 @@ public class SkeletonScript extends LoopingScript {
                     .filter(item -> {
                         String name = item.getName();
                         return name != null && 
-                                (name.toLowerCase().contains("pouch") || 
+                                ( 
                                  name.toLowerCase().contains("contract"));
                     })
                     .findFirst()
@@ -1161,7 +1161,7 @@ public class SkeletonScript extends LoopingScript {
                 Backpack.interact(itemToSummon.getName(), "Summon");
                 lastSummonAttemptTick = serverTicks;
             } else {
-                println("[FAMILIAR] No familiar pouch or contract found in inventory");
+                println("[FAMILIAR] No binding contract found in inventory");
                 lastSummonAttemptTick = serverTicks; // Still set cooldown to avoid spam
             }
         }
