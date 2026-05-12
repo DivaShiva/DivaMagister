@@ -874,6 +874,7 @@ public class SkeletonScript extends LoopingScript {
         if (Interfaces.isOpen(1622)) {
             println("[LOOT] Interface already open");
             lootState = LootState.LOOT_ALL;
+            lootStateStartTime = System.currentTimeMillis();
             return random.nextLong(300, 600);
         }
         
@@ -904,7 +905,8 @@ public class SkeletonScript extends LoopingScript {
         // Check if interface opened
         if (Interfaces.isOpen(1622)) {
             lootState = LootState.LOOT_ALL;
-            return random.nextLong(300, 600);
+            lootStateStartTime = System.currentTimeMillis(); // Reset timer for LOOT_ALL timeout
+            return random.nextLong(500, 800);
         }
         
         // Timeout after 5 seconds
@@ -943,9 +945,6 @@ public class SkeletonScript extends LoopingScript {
             return random.nextLong(600, 1000);
         }
         
-        // Update loot value tracker
-        updateAndDisplayCumulativeLootValue();
-        
         // Click Loot All
         ComponentQuery lootAllQuery = ComponentQuery.newQuery(1622);
         List<Component> components = lootAllQuery.componentIndex(22).results().stream().toList();
@@ -954,16 +953,23 @@ public class SkeletonScript extends LoopingScript {
             Component lootAllComponent = components.get(0);
             if (lootAllComponent.interact()) {
                 println("[LOOT] Clicked 'Loot All' successfully");
+                // Update loot value tracker
+                updateAndDisplayCumulativeLootValue();
                 lootState = LootState.POST_LOOT;
                 return random.nextLong(600, 1000);
             } else {
-                println("[LOOT] Failed to click 'Loot All'");
+                println("[LOOT] Failed to click 'Loot All', retrying...");
                 return random.nextLong(400, 700);
             }
         } else {
-            println("[LOOT] 'Loot All' component not found");
-            finishLooting();
-            return random.nextLong(600, 1000);
+            // Component not loaded yet — wait and retry (interface might still be loading)
+            long elapsed = System.currentTimeMillis() - lootStateStartTime;
+            if (elapsed > 5000) {
+                println("[LOOT] 'Loot All' component not found after 5s, skipping");
+                finishLooting();
+                return random.nextLong(600, 1000);
+            }
+            return random.nextLong(300, 600);
         }
     }
     
