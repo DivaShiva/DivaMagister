@@ -84,6 +84,7 @@ public class SkeletonScript extends LoopingScript {
     private long presetLoadedTime = 0;
     private long invokeDeathCastTime = 0; // Track when Invoke Death was last cast (for 12 second buff duration)
     private boolean shouldCastInvokeDeathAndClickObelisk = false; // Flag to handle completion in main loop
+    private int lastSummonAttemptTick = -25; // Familiar summon cooldown, init to ready
     private int lastPotionTick = -2; // Global potion cooldown = 2 ticks (1.2 seconds), init to ready
 
     // Basic Attack component click cache
@@ -1096,53 +1097,41 @@ public class SkeletonScript extends LoopingScript {
     }
     
     private void manageFamiliarSummoning() {
-        boolean isFamiliarSummoned = isFamiliarSummoned();
-        int familiarTimeRemaining = VarManager.getVarbitValue(6055);
-        
-        if (isFamiliarSummoned) {
-            familiarTimeRemaining = VarManager.getVarbitValue(6055);
-            println("[FAMILIAR] Familiar time remaining: " + familiarTimeRemaining + " Minutes");
+        // Cooldown to prevent spam - varbit takes ~15 seconds to update
+        if (serverTicks - lastSummonAttemptTick < 25) {
+            return;
         }
         
-        if (!isFamiliarSummoned || familiarTimeRemaining <= 5) {
-            summonFamiliar();
+        boolean summoned = isFamiliarSummoned();
+        int timeRemaining = VarManager.getVarbitValue(6055);
+        
+        if (!summoned || timeRemaining <= 2) {
+            println("[FAMILIAR] " + (summoned ? "Time low (" + timeRemaining + " min)" : "Not summoned") + " - attempting to summon");
+            
+            Item itemToSummon = InventoryItemQuery.newQuery(93).results().stream()
+                    .filter(item -> {
+                        String name = item.getName();
+                        return name != null && 
+                                (name.toLowerCase().contains("pouch") || 
+                                 name.toLowerCase().contains("contract"));
+                    })
+                    .findFirst()
+                    .orElse(null);
+            
+            if (itemToSummon != null) {
+                println("[FAMILIAR] Summoning with: " + itemToSummon.getName());
+                Backpack.interact(itemToSummon.getName(), "Summon");
+                lastSummonAttemptTick = serverTicks;
+            } else {
+                println("[FAMILIAR] No familiar pouch or contract found in inventory");
+                lastSummonAttemptTick = serverTicks; // Still set cooldown to avoid spam
+            }
         }
     }
     
     private boolean isFamiliarSummoned() {
         Component familiarComponent = ComponentQuery.newQuery(284).spriteId(26095).results().first();
         return familiarComponent != null;
-    }
-    
-    private void summonFamiliar() {
-        ResultSet<Item> items = InventoryItemQuery.newQuery(93).results();
-        Item itemToSummon = items.stream()
-                .filter(item -> item.getName() != null && 
-                        (item.getName().toLowerCase().contains("pouch") || 
-                         item.getName().toLowerCase().contains("contract")))
-                .findFirst()
-                .orElse(null);
-        
-        if (itemToSummon != null) {
-            println("[FAMILIAR] Attempting to summon with: " + itemToSummon.getName());
-            boolean success = Backpack.interact(itemToSummon.getName(), "Summon");
-            Execution.delay(random.nextLong(1600, 2100));
-            
-            if (success) {
-                println("[FAMILIAR] Summoned familiar with: " + itemToSummon.getName());
-                boolean familiarSummoned = Execution.delayUntil(10000, this::isFamiliarSummoned);
-                
-                if (familiarSummoned) {
-                    println("[FAMILIAR] " + itemToSummon.getName() + " is now summoned.");
-                } else {
-                    println("[FAMILIAR] Failed to confirm familiar summoning");
-                }
-            } else {
-                println("[FAMILIAR] Failed to interact with " + itemToSummon.getName());
-            }
-        } else {
-            println("[FAMILIAR] No familiar pouch or contract found in inventory");
-        }
     }
     
     private void checkAndDrinkPrayerPotion(LocalPlayer player) {
