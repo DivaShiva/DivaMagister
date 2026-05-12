@@ -945,31 +945,25 @@ public class SkeletonScript extends LoopingScript {
             return random.nextLong(600, 1000);
         }
         
-        // Click Loot All
-        ComponentQuery lootAllQuery = ComponentQuery.newQuery(1622);
-        List<Component> components = lootAllQuery.componentIndex(22).results().stream().toList();
+        // Click Loot All using MiniMenu (more reliable than component.interact)
+        // Interface 1622, component 22 = Loot All button
+        // Component ID = (1622 << 16) | 22 = 106299414
+        boolean clicked = MiniMenu.interact(ComponentAction.COMPONENT.getType(), 0, -1, 106299414);
         
-        if (!components.isEmpty()) {
-            Component lootAllComponent = components.get(0);
-            if (lootAllComponent.interact()) {
-                println("[LOOT] Clicked 'Loot All' successfully");
-                // Update loot value tracker
-                updateAndDisplayCumulativeLootValue();
-                lootState = LootState.POST_LOOT;
-                return random.nextLong(600, 1000);
-            } else {
-                println("[LOOT] Failed to click 'Loot All', retrying...");
-                return random.nextLong(400, 700);
-            }
+        if (clicked) {
+            println("[LOOT] Clicked 'Loot All' successfully");
+            updateAndDisplayCumulativeLootValue();
+            lootState = LootState.POST_LOOT;
+            return random.nextLong(600, 1000);
         } else {
-            // Component not loaded yet — wait and retry (interface might still be loading)
+            // Retry
             long elapsed = System.currentTimeMillis() - lootStateStartTime;
             if (elapsed > 5000) {
-                println("[LOOT] 'Loot All' component not found after 5s, skipping");
+                println("[LOOT] Failed to click 'Loot All' after 5s, skipping");
                 finishLooting();
                 return random.nextLong(600, 1000);
             }
-            return random.nextLong(300, 600);
+            return random.nextLong(400, 700);
         }
     }
     
