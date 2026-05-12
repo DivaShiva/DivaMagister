@@ -84,6 +84,7 @@ public class SkeletonScript extends LoopingScript {
     private long presetLoadedTime = 0;
     private long invokeDeathCastTime = 0; // Track when Invoke Death was last cast (for 12 second buff duration)
     private boolean shouldCastInvokeDeathAndClickObelisk = false; // Flag to handle completion in main loop
+    private int lastPotionTick = -2; // Global potion cooldown = 2 ticks (1.2 seconds), init to ready
 
     // Basic Attack component click cache
     private int cachedBasicAttackComponentId = -1;
@@ -1165,6 +1166,11 @@ public class SkeletonScript extends LoopingScript {
     }
     
     private void drinkSuperRestore() {
+        // Check global potion cooldown (1.2 seconds = 2 ticks)
+        if (serverTicks - lastPotionTick < 2) {
+            return;
+        }
+        
         println("[PRAYER] Attempting to drink Super Restore from action bar...");
         
         String[] superRestoreVariants = new String[]{
@@ -1188,6 +1194,7 @@ public class SkeletonScript extends LoopingScript {
                 boolean successfulDrink = ActionBar.useItem(restoreName, "Drink");
                 if (successfulDrink) {
                     println("[PRAYER] Successfully drank " + restoreName + " from action bar");
+                    lastPotionTick = serverTicks;
                     return;
                 } else {
                     println("[PRAYER] Failed to drink " + restoreName + " despite being on action bar");
